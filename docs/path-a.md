@@ -134,8 +134,15 @@ The script also sets Tailscale as the **always-on VPN**, so it reconnects after 
 
 Android lets *you* force-stop any app, and no app can survive that: tapping **Force stop** in
 Termux's app info, or **Clear all** in the recent-apps screen on some phones (Motorola included),
-kills Termux until it is opened again. To avoid it, **lock Termux in recents** (open recents,
-tap the Termux icon on top of its card, choose *Lock*), so "Clear all" skips it.
+kills Termux until it is opened again. To avoid it, **lock Termux in recents**: open the
+recent-apps screen (■ button), and on Motorola tap the **padlock** under the Termux card.
+It confirms with *"A locked app can't be cleared"*, and "Clear all" skips it from then on.
+
+<img src="img/lock-termux-in-recents.jpg" alt="Motorola recent apps screen with Termux's card; under it a padlock button is enabled and the message reads 'La aplicación bloqueada no puede borrarse' (A locked app can't be cleared)." width="280">
+
+Don't confuse it with **screen pinning** ("App pinned", unpin by holding Back + Recents): that
+traps the phone inside Termux and blocks the scripts from opening other apps. It can be a nice
+"kid lock" once the server is finished, but leave it off while setting things up.
 
 To bring it back, just **open Termux**: its startup restarts the server. From the computer, with
 the cable plugged in and the phone unlocked:
