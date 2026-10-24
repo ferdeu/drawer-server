@@ -77,6 +77,7 @@ If you try another phone, please open an issue or PR with your results.
 - [x] Step 3: SSH with key login + start on boot
 - [x] Step 4: Wi-Fi access + router reservation guide
 - [x] Step 5: Tailscale (always-on VPN)
+- [x] Optional: `scripts/extra-debloat.sh` frees ~0.8 GB of RAM by removing preinstalled bloat (reversible)
 - [x] Step 6: whole-home ad blocking (NextDNS + the phone keeps the linked IP updated)
 - [ ] Services: Minecraft, photo backup, Jellyfin, camera recorder…
 - [ ] Battery care for a phone that's always plugged in

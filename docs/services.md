@@ -4,7 +4,8 @@ What you can run on the phone, with **numbers measured on the test phone** (Moto
 8 GB RAM, 8 cores, Android 14, Path A / no root) on 2026-10-24.
 
 Starting point: with Android + SSH + the NextDNS updater running, about **4.9 GB of RAM is
-available**. Leave ~1 GB for Android itself, so plan with **~3.5–4 GB** for services.
+available**, and **5.7 GB** after removing preinstalled bloat with `scripts/extra-debloat.sh`.
+Leave ~1 GB for Android itself, so plan with **~4–4.5 GB** for services.
 
 ## The menu
 
