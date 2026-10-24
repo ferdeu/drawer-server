@@ -12,6 +12,6 @@ Ideas on the list (Path A, no root):
 | File share | a shared folder on the home network | e.g. over SFTP (already works with SSH) |
 | Bots / scripts 24/7 | anything you want running all the time | Python, Node, cron |
 | Status page | battery, temperature, uptime at a glance | uses Termux:API |
-| Ad blocker (AdGuard Home) | block ads for the whole house | needs port 53 → root (Path B), or a workaround |
+| Ad blocker | block ads for the whole house | ✅ done with NextDNS (`scripts/06-nextdns.sh`). AdGuard Home on the phone needs port 53, which Android blocks without root (tested: 53 and 853 denied, 5353 allowed) |
 
 RAM/CPU numbers and "how many fit at once" will be filled in with real measurements.
