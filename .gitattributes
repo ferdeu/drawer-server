@@ -1,0 +1,2 @@
+# Scripts run on Linux/Android shells: always LF
+*.sh text eol=lf

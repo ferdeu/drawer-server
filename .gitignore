@@ -1,0 +1,6 @@
+# downloaded APKs
+apks/
+# per-phone data: IPs, Termux user
+local/
+# personal progress log
+PROGRESO.md
