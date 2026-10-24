@@ -1,17 +1,54 @@
 # Services
 
-🚧 Work in progress. Each service will get its own script once it's tested on a real phone.
+What you can run on the phone, with **numbers measured on the test phone** (Moto G24 Power,
+8 GB RAM, 8 cores, Android 14, Path A / no root) on 2026-10-24.
 
-Ideas on the list (Path A, no root):
+Starting point: with Android + SSH + the NextDNS updater running, about **4.9 GB of RAM is
+available**. Leave ~1 GB for Android itself, so plan with **~3.5–4 GB** for services.
 
-| Service | What it's for | Notes |
-|---|---|---|
-| Minecraft server | a world for the kids on the home Wi-Fi | Java edition via a JVM, or a lightweight server; RAM-hungry |
-| Syncthing | automatic photo backup between devices | light, runs well in Termux |
-| Jellyfin | "home Netflix" for your own videos | transcoding is heavy on a phone CPU; direct play is fine |
-| File share | a shared folder on the home network | e.g. over SFTP (already works with SSH) |
-| Bots / scripts 24/7 | anything you want running all the time | Python, Node, cron |
-| Status page | battery, temperature, uptime at a glance | uses Termux:API |
-| Ad blocker | block ads for the whole house | ✅ done with NextDNS (`scripts/06-nextdns.sh`). AdGuard Home on the phone needs port 53, which Android blocks without root (tested: 53 and 853 denied, 5353 allowed) |
+## The menu
 
-RAM/CPU numbers and "how many fit at once" will be filled in with real measurements.
+| Service | What it's for | RAM | CPU | Difficulty | Status |
+|---|---|---|---|---|---|
+| **Ad blocker** (NextDNS) | blocks ads for the whole home | 3 MB (IP updater) | ~0 | ⭐ easy | ✅ `scripts/06-nextdns.sh` |
+| **SSH / SFTP** | control the phone; copy files with WinSCP, FileZilla, etc. | 2 MB | ~0 | ⭐ easy | ✅ comes with step 3 |
+| **Minecraft Java server** (Paper 26.2, Java 25) | a world for the kids | **1.3 GB** idle, plan 2 GB with players | **~33% of one core** idle (of 8 cores) | ⭐⭐ medium | 🧪 measured, script pending |
+| **Syncthing** | automatic photo/file backup between phones and computers | **29 MB** idle | ~0 idle, bursts while syncing | ⭐⭐ medium | 🧪 measured, script pending |
+| **Status panel** (small Python web page) | battery, temperature, RAM, uptime at a glance | **23 MB** | ~0 | ⭐ easy | 🧪 measured, script pending |
+| **Camera recorder** (ffmpeg, RTSP) | record Wi-Fi cameras 24/7 or by schedule | est. 30–60 MB per camera | low (copies the video, doesn't re-encode) | ⭐⭐ medium | ⏳ needs the cameras' RTSP password |
+| **Jellyfin** ("home Netflix") | movies and shows on the TV/Chromecast | est. 300–500 MB (runs inside a Debian container, `proot-distro`) | fine if the TV plays the file as-is; re-encoding video is too heavy for a phone CPU | ⭐⭐⭐ hard | ⏳ not measured |
+| **Uptime monitor** (e.g. Uptime Kuma) | logs when the internet goes down | est. 80–120 MB | low | ⭐⭐ medium | 💡 idea |
+| **Bots / scripts 24/7** (Python, Node) | Telegram bot, alerts, automations | 20–80 MB each | depends | ⭐–⭐⭐ | 💡 idea |
+
+Measured idle = server started, nobody connected. "est." = not measured yet.
+
+### Not a good fit for this phone (Path A)
+
+| Service | Why not |
+|---|---|
+| AdGuard Home / Pi-hole on the phone | needs port 53; Android blocks it without root (tested: 53 and 853 denied, 5353 allowed) |
+| Windows shared folder (Samba) | Windows only talks to port 445, also blocked without root. Use SFTP instead. |
+| Immich (Google Photos clone) | needs Docker and a machine-learning stack; too heavy for Termux. Syncthing covers the backup part. |
+| Nextcloud | possible (PHP + database in a container) but heavy and fiddly for what it gives; Syncthing is lighter |
+| Minecraft **Bedrock** server (official) | x86-only binary. A Java server + the Geyser plugin lets Bedrock players (tablets, phones, consoles) join. |
+
+## How many at once?
+
+With ~3.5–4 GB to spend, all of these fit **together**:
+
+```
+Minecraft (2 GB with players) + Syncthing + camera recorder (3 cameras) + status panel + NextDNS updater
+≈ 2.0 + 0.05 + 0.15 + 0.02 + 0.003  ≈ 2.3 GB
+```
+
+Jellyfin (~0.5 GB) also fits on RAM, but avoid using it while kids are playing Minecraft:
+both want the CPU. Storage is the other limit: video recording fills disks fast
+(a 1080p camera stream is roughly 15–40 GB per day), so recorder setups need a retention limit
+or the cameras' lower-resolution sub-stream.
+
+## Minecraft notes (from the test)
+
+- First start (creating the world) took **55 s**; the world uses **235 MB** of disk.
+- Harmless errors at start: `JNA ... libc.so.6 not found`. It's a hardware-info library that
+  doesn't know Android. The server runs fine.
+- Latest Minecraft (26.x) needs **Java 25** (`pkg install openjdk-25`). Termux also has 17 and 21 for older versions.
