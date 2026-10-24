@@ -15,6 +15,7 @@ STEPS=(
   "scripts/03-setup-ssh.sh|Set up SSH so this computer can control the phone"
   "scripts/04-network.sh|Test Wi-Fi access and show what to reserve in the router"
   "scripts/05-tailscale.sh|Tailscale, to reach the phone from outside home"
+  "scripts/06-nextdns.sh|Ad blocking for the whole home with NextDNS (optional)"
 )
 
 cat <<'EOF'

@@ -8,6 +8,14 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Secrets live in .env (gitignored); see .env.example
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source <(tr -d '\r' < "$REPO_ROOT/.env")
+  set +a
+fi
 PHONE_DIR="/sdcard/Download/drawer-server"
 
 say()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }

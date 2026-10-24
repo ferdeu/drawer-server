@@ -1,3 +1,5 @@
+# your secrets (copy .env.example to .env)
+.env
 # downloaded APKs
 apks/
 # per-phone data: IPs, Termux user
