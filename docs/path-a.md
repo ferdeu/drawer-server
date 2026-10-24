@@ -130,6 +130,23 @@ The script also sets Tailscale as the **always-on VPN**, so it reconnects after 
 
 ---
 
+## If the server stops ("Connection refused")
+
+Android lets *you* force-stop any app, and no app can survive that: tapping **Force stop** in
+Termux's app info, or **Clear all** in the recent-apps screen on some phones (Motorola included),
+kills Termux until it is opened again. To avoid it, **lock Termux in recents** (open recents,
+tap the Termux icon on top of its card, choose *Lock*), so "Clear all" skips it.
+
+To bring it back, just **open Termux**: its startup restarts the server. From the computer, with
+the cable plugged in and the phone unlocked:
+
+```bash
+bash scripts/restart-server.sh
+```
+
+You don't need the screen always on: Termux's wake lock keeps the processor running with the
+screen off, and a screen that's always on heats the phone, which is bad for the battery.
+
 ## Undoing everything
 
 ```bash

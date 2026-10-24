@@ -33,6 +33,15 @@ sshd
 EOF
 chmod +x ~/.termux/boot/10-sshd.sh
 
+# If Android force-stops Termux (e.g. "Clear all" in recents), just opening Termux
+# again brings the server back.
+touch ~/.bashrc
+grep -q 'drawer-server' ~/.bashrc || cat >> ~/.bashrc <<'EOF'
+# drawer-server: restart the server whenever Termux opens
+pgrep -x sshd >/dev/null || { termux-wake-lock; sshd; }
+for s in ~/.termux/boot/*.sh; do [ "$s" = ~/.termux/boot/10-sshd.sh ] || sh "$s"; done 2>/dev/null
+EOF
+
 termux-wake-lock
 pkill sshd || true
 sshd
