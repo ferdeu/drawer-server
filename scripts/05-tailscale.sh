@@ -16,7 +16,7 @@ if ! has_app; then
   say "Opening Tailscale in the Play Store"
   adb shell input keyevent KEYCODE_WAKEUP
   adb shell am start -a android.intent.action.VIEW -d "market://details?id=$APP" >/dev/null
-  wait_for "Tap 'Install' in the Play Store." 600 has_app
+  wait_for "Tap 'Install' in the Play Store (the phone needs a Google account signed in)." 900 has_app
 fi
 
 adb shell dumpsys deviceidle whitelist +$APP >/dev/null
@@ -27,15 +27,15 @@ if ! has_ts_ip; then
   wait_for "Log in (Google account is fine), accept the VPN permission, and turn Tailscale ON." 900 has_ts_ip
 fi
 
+say "Making Tailscale an always-on VPN, so it reconnects after reboots"
+adb shell settings put secure always_on_vpn_app "$APP"
+
 TS_IP="$(ts_ip)"
 { grep -v '^PHONE_TS_IP=' "$REPO_ROOT/local/phone.env"; echo "PHONE_TS_IP=$TS_IP"; } > "$REPO_ROOT/local/phone.env.tmp"
 mv "$REPO_ROOT/local/phone.env.tmp" "$REPO_ROOT/local/phone.env"
 
 say "Phone's Tailscale address: $TS_IP"
 cat <<EOF
-  In the Tailscale app on the phone, open the settings and turn ON "Always-on VPN" if offered,
-  so it reconnects after reboots.
-
   To reach the phone from outside home, install Tailscale on your computer or other phone
   (same account) and use:
      ssh -i ~/.ssh/drawer_server_ed25519 -p 8022 $TERMUX_USER@$TS_IP

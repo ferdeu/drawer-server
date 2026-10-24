@@ -124,7 +124,7 @@ so nobody outside can reach yours directly.
 for personal use. The script opens the Play Store for you. Install it, log in, and accept the VPN
 permission. Then install Tailscale on your computer or other phone with the same account.
 
-Turn on **Always-on VPN** for Tailscale (Android Settings → Network → VPN → gear icon) so it reconnects after a reboot.
+The script also sets Tailscale as the **always-on VPN**, so it reconnects after a reboot. The phone needs a Google account signed in to install from the Play Store.
 
 ---
 

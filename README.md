@@ -56,7 +56,7 @@ Using an AI coding agent? Point it at [AGENTS.md](AGENTS.md) and it can drive th
 
 | Phone | Android | Result |
 |---|---|---|
-| Motorola **Moto G24 Power** (XT2425-1, `fogorow`, MediaTek Helio G85, 8 GB RAM) | 14 | ✅ Path A steps 0–4 working |
+| Motorola **Moto G24 Power** (XT2425-1, `fogorow`, MediaTek Helio G85, 8 GB RAM) | 14 | ✅ Path A steps 0–5 working |
 
 Path A uses only standard Android features, so it should work on most phones running **Android 11 or newer**.
 If you try another phone, please open an issue or PR with your results.
@@ -75,7 +75,7 @@ If you try another phone, please open an issue or PR with your results.
 - [x] Step 2: Termux from F-Droid
 - [x] Step 3: SSH with key login + start on boot
 - [x] Step 4: Wi-Fi access + router reservation guide
-- [ ] Step 5: Tailscale (script written, being tested)
+- [x] Step 5: Tailscale (always-on VPN)
 - [ ] Services: ad blocker, Minecraft, photo backup, Jellyfin…
 - [ ] Battery care for a phone that's always plugged in
 
