@@ -17,6 +17,7 @@ STEPS=(
   "scripts/05-tailscale.sh|Tailscale, to reach the phone from outside home"
   "scripts/06-nextdns.sh|Ad blocking for the whole home with NextDNS (optional)"
   "scripts/07-luanti.sh|Game server for the kids: Luanti + Mineclonia"
+  "scripts/08-panel.sh|Status panel web page"
 )
 
 cat <<'EOF'

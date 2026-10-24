@@ -80,8 +80,9 @@ If you try another phone, please open an issue or PR with your results.
 - [x] Optional: `scripts/extra-debloat.sh` frees ~0.8 GB of RAM by removing preinstalled bloat (reversible)
 - [x] Step 6: whole-home ad blocking (NextDNS + the phone keeps the linked IP updated)
 - [x] Step 7: game server for kids (Luanti + Mineclonia, free on Android and Windows)
-- [ ] Services: photo backup, camera recorder, status panel, Jellyfin…
-- [ ] Battery care for a phone that's always plugged in
+- [x] Step 8: status panel (battery, temperature, memory, services, 24 h battery chart)
+- [ ] Battery care for an always-plugged phone (smart plug, see docs/devices)
+- [ ] Services: photo backup, camera recorder, Jellyfin…
 
 ## Repo layout
 

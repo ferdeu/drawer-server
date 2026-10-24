@@ -6,8 +6,13 @@ source "$(dirname "$0")/lib.sh"
 require_device
 load_phone_env
 
-say "Opening Termux (its startup restarts the server)"
+say "Waking Termux:Boot and Termux:API (a force-stop leaves them 'stopped': no boot scripts, no battery readings)"
 adb shell input keyevent KEYCODE_WAKEUP
+adb shell am start -n com.termux.boot/.BootActivity >/dev/null 2>&1 || true
+adb shell am start -n com.termux.api/.activities.TermuxAPILauncherActivity >/dev/null 2>&1 || true
+sleep 2
+
+say "Opening Termux (its startup restarts the server)"
 adb shell am start -n com.termux/.app.TermuxActivity >/dev/null
 sleep 6
 # older installs don't have the auto-restart in ~/.bashrc yet, so also type it

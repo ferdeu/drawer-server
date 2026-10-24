@@ -35,6 +35,7 @@ channel so you can restore it.
 ## Notes for an always-plugged phone
 
 Being plugged in 24/7 at 100% can swell a lithium battery over time. Without root you can't cap
-charging from software. Options being investigated: a smart plug that cycles power, and checking
-whether Motorola's built-in "Optimized charging / overcharge protection" covers this model.
+charging from software, and **this model has no built-in charge limit** (checked Settings > Battery
+and the hidden settings on Android 14: only Battery saver and Battery manager). Plan: a Wi-Fi smart
+plug (Tuya / Smart Life) that the phone switches off at 80% and on at 40%.
 Keep the phone somewhere cool and out of its case, and check it now and then for bulging.
