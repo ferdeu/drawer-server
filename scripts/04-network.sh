@@ -26,7 +26,8 @@ mv "$REPO_ROOT/local/phone.env.tmp" "$REPO_ROOT/local/phone.env"
 say "Now give it a fixed address in your router (DHCP reservation)"
 cat <<EOF
   1. Open your router page (TP-Link: http://192.168.0.1 or http://192.168.1.1 or http://tplinkwifi.net).
-  2. Find "DHCP" > "Address Reservation" (on some models: Advanced > Network > DHCP Server).
+  2. Find "Address Reservation". TP-Link Archer AX23 (tested): Advanced > Network > DHCP Server
+     > Address Reservation > Add. Press Tab after typing the IP, or SAVE stays greyed out.
   3. Add:  MAC = $MAC   IP = $IP
   4. Save. From now on the phone always gets $IP at home.
 

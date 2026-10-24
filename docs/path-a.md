@@ -107,6 +107,8 @@ Tests SSH over Wi-Fi (no cable) and tells you what to put in your router so the 
 same address. That's a **DHCP reservation**: the router hands out addresses like a coat check, and the
 reservation tells it "this phone always gets ticket 50".
 
+On a **TP-Link Archer AX23** (tested): *Advanced → Network → DHCP Server → Address Reservation → Add*, type the MAC in the six boxes and the IP, then press **Tab** (the SAVE button stays grey until the IP field loses focus).
+
 About the MAC address: Android invents a different one for each Wi-Fi network (privacy feature), but it
 stays the same for *your* network, so reserving the one the script shows works fine.
 
