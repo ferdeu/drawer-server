@@ -24,7 +24,7 @@ phone keeps the matching public "lock". Only that computer can get in.
 many ports. SSH lives in apartment 8022 in Termux. Apartments below 1024 are "reserved": only the
 building manager (root) can use them.
 
-**IP address**: the phone's address on your home network, like `192.168.1.170`. The router hands
+**IP address**: the phone's address on your home network, like `192.168.1.50`. The router hands
 them out. A **DHCP reservation** makes the router always give the same one to the same device.
 
 **CGNAT**: your internet company puts many homes behind one shared public address, like a building

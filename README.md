@@ -33,7 +33,7 @@ You need: the phone, a USB cable, a computer (Windows with [Git Bash](https://gi
    - Debian/Ubuntu: `sudo apt install adb`
 3. Plug the phone in, then:
    ```bash
-   git clone https://github.com/<you>/drawer-server.git
+   git clone https://github.com/ferdeu/drawer-server.git
    cd drawer-server
    bash setup.sh
    ```

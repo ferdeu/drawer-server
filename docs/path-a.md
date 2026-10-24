@@ -105,7 +105,7 @@ You'll see a permanent notification "Termux: wake lock held". That's how you kno
 
 Tests SSH over Wi-Fi (no cable) and tells you what to put in your router so the phone always gets the
 same address. That's a **DHCP reservation**: the router hands out addresses like a coat check, and the
-reservation tells it "this phone always gets ticket 170".
+reservation tells it "this phone always gets ticket 50".
 
 About the MAC address: Android invents a different one for each Wi-Fi network (privacy feature), but it
 stays the same for *your* network, so reserving the one the script shows works fine.
