@@ -13,6 +13,7 @@ Leave ~1 GB for Android itself, so plan with **~4–4.5 GB** for services.
 |---|---|---|---|---|---|
 | **Ad blocker** (NextDNS) | blocks ads for the whole home | 3 MB (IP updater) | ~0 | ⭐ easy | ✅ `scripts/06-nextdns.sh` |
 | **SSH / SFTP** | control the phone; copy files with WinSCP, FileZilla, etc. | 2 MB | ~0 | ⭐ easy | ✅ comes with step 3 |
+| **Luanti + Mineclonia** (free Minecraft-like game) | a world for the kids; free clients on Android and Windows | **270–320 MB** | low; lag spike only while a new player downloads the textures | ⭐⭐ medium | ✅ `scripts/07-luanti.sh` |
 | **Minecraft Java server** (Paper 26.2, Java 25) | a world for the kids | **1.3 GB** idle, plan 2 GB with players | **~33% of one core** idle (of 8 cores) | ⭐⭐ medium | 🧪 measured, script pending |
 | **Syncthing** | automatic photo/file backup between phones and computers | **29 MB** idle | ~0 idle, bursts while syncing | ⭐⭐ medium | 🧪 measured, script pending |
 | **Status panel** (small Python web page) | battery, temperature, RAM, uptime at a glance | **23 MB** | ~0 | ⭐ easy | 🧪 measured, script pending |
@@ -31,7 +32,7 @@ Measured idle = server started, nobody connected. "est." = not measured yet.
 | Windows shared folder (Samba) | Windows only talks to port 445, also blocked without root. Use SFTP instead. |
 | Immich (Google Photos clone) | needs Docker and a machine-learning stack; too heavy for Termux. Syncthing covers the backup part. |
 | Nextcloud | possible (PHP + database in a container) but heavy and fiddly for what it gives; Syncthing is lighter |
-| Minecraft **Bedrock** server (official) | x86-only binary. A Java server + the Geyser plugin lets Bedrock players (tablets, phones, consoles) join. |
+| Minecraft **Bedrock** server (official) | x86-only binary. Luanti + Mineclonia is the free alternative that runs here. A Java server + the Geyser plugin lets Bedrock players (tablets, phones, consoles) join. |
 
 ## How many at once?
 
@@ -46,6 +47,13 @@ Jellyfin (~0.5 GB) also fits on RAM, but avoid using it while kids are playing M
 both want the CPU. Storage is the other limit: video recording fills disks fast
 (a 1080p camera stream is roughly 15–40 GB per day), so recorder setups need a retention limit
 or the cameras' lower-resolution sub-stream.
+
+## Luanti notes (from the test)
+
+- Runs inside Debian 13 (`proot-distro`), Luanti 5.10 server; a 5.17 Windows client connected fine.
+- A player's **first** join downloads all the game's textures, which takes a minute or two on Wi-Fi.
+  Later joins are quick.
+- The world lives in `~/luanti/worlds/casa` in Termux. Copy that folder to back it up.
 
 ## Minecraft notes (from the test)
 
