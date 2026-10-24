@@ -48,6 +48,7 @@ Using an AI coding agent? Point it at [AGENTS.md](AGENTS.md) and it can drive th
 | 0 | "Allow USB debugging?" | **Always allow from this computer** → Allow |
 | 2 | Google Play Protect: *"Blocked unsafe app… built for an older version of Android"* (×3) | the small **"Install anyway"** text, **not** the big "Got it" button ([why](docs/path-a.md#about-the-play-protect-warning)) |
 | 3 | Termux opens and text types itself | nothing, just keep the screen unlocked for a few minutes |
+| 3 | Recent apps screen | tap the **padlock** under Termux so "Clear all" can't close it ([how](docs/path-a.md#if-the-server-stops-connection-refused)) |
 | 5 | Play Store → Tailscale | Install, log in, accept the VPN permission |
 
 <img src="docs/img/play-protect-warning.jpg" alt="Google Play Protect warning for Termux:Boot, in Spanish. Tap 'Instalar de todas formas' (Install anyway), not 'Entendido' (Got it)." width="280">

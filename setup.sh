@@ -26,6 +26,7 @@ cat <<'EOF'
     * Tap "Install anyway" on 3 Google Play Protect warnings
       - it's the small text above the big "Got it" button  (step 2)
     * Leave the phone unlocked on Termux for a few minutes (step 3)
+    * Lock Termux in recent apps (padlock), so "Clear all" can't kill it
     * Install Tailscale from the Play Store and log in     (step 5)
 
 EOF
