@@ -31,20 +31,35 @@ _battery = {}
 
 
 def battery():
-    """termux-battery-status (Termux:API). Slow-ish (~1 s), so callers use the cached copy."""
+    """termux-battery-status (Termux:API). Slow-ish (~1 s), so callers use the cached copy.
+
+    If Termux:API doesn't answer, the helper it spawns waits forever. subprocess's timeout only
+    kills the direct child, so those helpers piled up (1921 of them on the test phone). Run it in
+    its own process group and kill the whole group instead.
+    """
+    proc = subprocess.Popen(["termux-battery-status"], stdout=subprocess.PIPE, text=True,
+                            start_new_session=True)
     try:
-        out = subprocess.run(["termux-battery-status"], capture_output=True, text=True, timeout=15)
-        return json.loads(out.stdout)
-    except (OSError, ValueError, subprocess.TimeoutExpired):
+        out, _ = proc.communicate(timeout=15)
+        return json.loads(out)
+    except (subprocess.TimeoutExpired, ValueError):
+        try:
+            os.killpg(proc.pid, 9)
+        except OSError:
+            pass
+        proc.wait()
         return {}
 
 
+_battery_ok_at = time.time()
+
+
 def battery_logger():
-    global _battery
+    global _battery, _battery_ok_at
     while True:
         b = battery()
         if b:
-            _battery = b
+            _battery, _battery_ok_at = b, time.time()
             with BATTERY_LOG.open("a", newline="") as f:
                 csv.writer(f).writerow([int(time.time()), b.get("percentage"), b.get("temperature"), b.get("plugged")])
             lines = BATTERY_LOG.read_text().splitlines()
@@ -115,6 +130,100 @@ def uptime_hours():
         return None
 
 
+# --- Home: Starlink, printer, who's home -------------------------------------------------
+# Each reader runs in its own thread every few minutes and leaves its last result here,
+# so a page load never waits on the network.
+CONFIG = HOME / ".config" / "drawer-server"
+STARLINK_DISH = os.environ.get("STARLINK_DISH", "192.168.100.1:9200")
+_home = {"starlink": None, "printer": None, "people": None}
+
+
+def every(seconds, key, reader):
+    def loop():
+        while True:
+            try:
+                _home[key] = reader()
+            except Exception as e:  # a broken reader must not kill the panel
+                _home[key] = {"error": str(e)}
+            time.sleep(seconds)
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def starlink():
+    """Ask the dish for its status over its local gRPC API (no account needed)."""
+    out = subprocess.run(["grpcurl", "-plaintext", "-max-time", "8", "-d", '{"get_status":{}}',
+                          STARLINK_DISH, "SpaceX.API.Device.Device/Handle"],
+                         capture_output=True, text=True, timeout=15)
+    s = json.loads(out.stdout)["dishGetStatus"]
+    return {
+        "latency_ms": round(s.get("popPingLatencyMs", 0)),
+        "down_mbps": round(s.get("downlinkThroughputBps", 0) / 1e6, 2),
+        "up_mbps": round(s.get("uplinkThroughputBps", 0) / 1e6, 2),
+        "obstructed_pct": round(s.get("obstructionStats", {}).get("fractionObstructed", 0) * 100, 1),
+        "uptime_h": round(int(s.get("deviceState", {}).get("uptimeS", 0)) / 3600, 1),
+        "alerts": [k for k, v in s.get("alerts", {}).items() if v],
+    }
+
+
+INK_COLORS = {0: "black", 1: "cyan", 2: "magenta", 3: "yellow", 4: "light cyan", 5: "light magenta"}
+
+
+def printer():
+    """Epson ink levels via Epson's own SNMP status query ('st' command), which works even on
+    old models that don't fill in the standard printer supplies table."""
+    host = (CONFIG / "printer").read_text().strip()
+    out = subprocess.run(["snmpget", "-v1", "-c", "public", "-t", "4", "-Ox", "-Oqv", host,
+                          "1.3.6.1.4.1.1248.1.2.2.44.1.1.2.1.115.116.1.0.1"],
+                         capture_output=True, text=True, timeout=15)
+    data = bytes.fromhex(re.sub(r"[^0-9A-Fa-f]", "", out.stdout))
+    start = data.find(b"@BDC ST2\r\n")
+    if start < 0:
+        raise ValueError("no Epson status in reply")
+    body = data[start + 12:]  # skip header and the 2-byte length
+    inks, i = [], 0
+    while i + 2 <= len(body):  # fields are: type, length, value
+        kind, size = body[i], body[i + 1]
+        value = body[i + 2:i + 2 + size]
+        if kind == 0x0F and value:  # ink: entry size, then [cartridge, color, level] per ink
+            step = value[0]
+            for j in range(1, len(value) - step + 1, step):
+                inks.append({"color": INK_COLORS.get(value[j + 1], str(value[j + 1])), "level": value[j + 2]})
+        i += 2 + size
+    return {"inks": inks}
+
+
+def ping(ip):
+    return subprocess.run(["ping", "-c", "2", "-W", "2", ip], capture_output=True).returncode == 0
+
+
+_last_seen = {}
+
+
+def people():
+    """Who's home: ping each person's phone. Sleeping phones skip pings, so someone counts as
+    home if their phone answered in the last 20 minutes. Config: one 'Name IP' per line."""
+    result = []
+    for line in (CONFIG / "people").read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        name, ip = line.rsplit(None, 1)
+        if ping(ip):
+            _last_seen[name] = time.time()
+        seen = _last_seen.get(name)
+        result.append({"name": name, "home": bool(seen and time.time() - seen < 20 * 60),
+                       "seen_min_ago": round((time.time() - seen) / 60) if seen else None})
+    return result
+
+
+def start_home_readers():
+    if (CONFIG / "starlink").exists():
+        every(60, "starlink", starlink)
+    if (CONFIG / "printer").exists():
+        every(600, "printer", printer)
+    if (CONFIG / "people").exists():
+        every(120, "people", people)
+
+
 def status():
     services = [
         {"name": "SSH", "ok": process_running("sshd")},
@@ -130,19 +239,33 @@ def status():
         for row in csv.reader(BATTERY_LOG.read_text().splitlines()):
             if len(row) >= 3 and row[1] and int(row[0]) >= day_ago:
                 history.append([int(row[0]), float(row[1]), float(row[2] or 0)])
-    return {"battery": _battery, "memory": memory(), "disk": disk(), "uptime_h": uptime_hours(),
-            "services": services, "history": history, "time": int(time.time())}
+    # Android sometimes puts Termux:API to sleep; then battery readings silently stop
+    battery_stale = time.time() - _battery_ok_at > 600
+    return {"battery": {} if battery_stale else _battery, "battery_stale": battery_stale, "memory": memory(), "disk": disk(), "uptime_h": uptime_hours(),
+            "services": services, "history": history, "home": _home, "time": int(time.time())}
 
 
 TEXT = {
     "en": {"title": "Drawer server", "battery": "Battery", "temp": "Temperature", "ram": "Free memory",
            "disk": "Free storage", "uptime": "Up for", "hours": "h", "services": "Services",
            "players": "playing", "nobody": "nobody playing", "history": "Battery, last 24 h",
-           "charging": "charging", "not_charging": "on battery", "updated": "updated"},
+           "charging": "charging", "not_charging": "on battery", "updated": "updated",
+           "unplug": "🔌 Battery at {p}%: unplug the charger (keeping it between 30 and 80% makes it last longer)",
+           "plug": "🔌 Battery at {p}%: plug the charger in (unplug it at 80%)",
+           "starlink": "Starlink", "latency": "latency", "obstructed": "obstructed", "dish_up": "dish on for",
+           "printer": "Printer ink", "people": "Who's home", "home": "home", "away": "away",
+           "api_asleep": "⚠️ Can't read the battery: Android put Termux:API to sleep. Run scripts/restart-server.sh with the phone plugged into the computer.",
+           "seen": "seen {m} min ago", "black": "black", "cyan": "cyan", "magenta": "magenta", "yellow": "yellow"},
     "es": {"title": "Servidor del cajón", "battery": "Batería", "temp": "Temperatura", "ram": "Memoria libre",
            "disk": "Espacio libre", "uptime": "Prendido hace", "hours": "h", "services": "Servicios",
            "players": "jugando", "nobody": "nadie jugando", "history": "Batería, últimas 24 h",
-           "charging": "cargando", "not_charging": "a batería", "updated": "actualizado"},
+           "charging": "cargando", "not_charging": "a batería", "updated": "actualizado",
+           "unplug": "🔌 Batería al {p}%: desenchufá el cargador (entre 30 y 80% dura muchos más años)",
+           "plug": "🔌 Batería al {p}%: enchufá el cargador (y sacalo al 80%)",
+           "starlink": "Starlink", "latency": "latencia", "obstructed": "obstruido", "dish_up": "antena prendida hace",
+           "printer": "Tinta de la impresora", "people": "¿Quién está en casa?", "home": "en casa", "away": "afuera",
+           "api_asleep": "⚠️ No puedo leer la batería: Android durmió a Termux:API. Corré scripts/restart-server.sh con el celu enchufado a la compu.",
+           "seen": "visto hace {m} min", "black": "negro", "cyan": "cian", "magenta": "magenta", "yellow": "amarillo"},
 }
 
 PAGE = """<!doctype html>
@@ -166,15 +289,26 @@ PAGE = """<!doctype html>
   .wide { grid-column:1 / -1; }
   svg { width:100%; height:120px; display:block; }
   .foot { color:var(--muted); font-size:12px; margin-top:12px; }
+  .alert { background:#fef3c7; color:#78350f; border-radius:14px; padding:12px 14px; margin-bottom:12px; font-weight:600; }
+  .alert:empty { display:none; }
+  .ink { display:flex; gap:6px; margin-top:6px; }
+  .ink > div { flex:1; min-width:0; text-align:center; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .tank { background:#8882; border-radius:6px; position:relative; height:60px; overflow:hidden; margin-bottom:4px; }
+  .tank i { position:absolute; bottom:0; left:0; right:0; border-radius:6px; }
+  .hidden { display:none; }
 </style></head>
 <body>
 <h1>📱 __TITLE__</h1>
+<div class="alert" id="alert"></div>
 <div class="grid">
   <div class="card"><div class="label">🔋 __BATTERY__</div><div class="big" id="bat">–</div><div class="sub" id="plug"></div></div>
   <div class="card"><div class="label">🌡️ __TEMP__</div><div class="big" id="temp">–</div></div>
   <div class="card"><div class="label">🧠 __RAM__</div><div class="big" id="ram">–</div><div class="sub" id="ramsub"></div></div>
   <div class="card"><div class="label">💾 __DISK__</div><div class="big" id="disk">–</div><div class="sub" id="up"></div></div>
   <div class="card wide"><div class="label">⚙️ __SERVICES__</div><div id="svcs"></div></div>
+  <div class="card wide hidden" id="sl"><div class="label">🛰️ __STARLINK__</div><div class="big" id="sl_lat"></div><div class="sub" id="sl_sub"></div></div>
+  <div class="card hidden" id="pp"><div class="label">🏠 __PEOPLE__</div><div id="pp_list"></div></div>
+  <div class="card hidden" id="pr"><div class="label">🖨️ __PRINTER__</div><div class="ink" id="pr_ink"></div></div>
   <div class="card wide"><div class="label">📈 __HISTORY__</div><svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg></div>
 </div>
 <div class="foot" id="foot"></div>
@@ -201,6 +335,12 @@ async function refresh() {
       return `<div class="svc"><span><span class="dot" style="background:${color(v.ok)}"></span>${v.name}</span><span class="sub">${detail}</span></div>`;
     }).join('');
     drawChart(s.history);
+    // charge-cycling reminder until a smart plug does it automatically
+    const p = b.percentage, plugged = b.plugged && b.plugged !== 'UNPLUGGED';
+    $('alert').textContent = s.battery_stale ? T.api_asleep
+                           : p == null ? '' : plugged && p >= 80 ? T.unplug.replace('{p}', p)
+                           : !plugged && p <= 30 ? T.plug.replace('{p}', p) : '';
+    drawHome(s.home || {});
     $('foot').textContent = T.updated + ' ' + new Date(s.time * 1000).toLocaleTimeString();
   } catch (e) { $('foot').textContent = '⚠️ ' + e; }
 }
@@ -214,6 +354,26 @@ function drawChart(h) {
     `<rect x="0" y="20" width="300" height="40" fill="var(--ok)" opacity="0.08"/>` +   // 40-80% sweet spot
     `<polyline points="${pts}" fill="none" stroke="var(--line)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
 }
+const INK = {black:'#222', cyan:'#06b6d4', magenta:'#d946ef', yellow:'#facc15'};
+function show(id, on) { $(id).classList.toggle('hidden', !on); }
+function drawHome(h) {
+  const sl = h.starlink;
+  show('sl', sl && !sl.error);
+  if (sl && !sl.error) {
+    $('sl_lat').textContent = sl.latency_ms + ' ms ' + T.latency;
+    $('sl_sub').textContent = `⬇ ${sl.down_mbps} Mbps · ⬆ ${sl.up_mbps} Mbps · ${sl.obstructed_pct}% ${T.obstructed} · ${T.dish_up} ${sl.uptime_h}${T.hours}` +
+      (sl.alerts.length ? ' · ⚠️ ' + sl.alerts.join(', ') : '');
+  }
+  const pp = h.people;
+  show('pp', Array.isArray(pp));
+  if (Array.isArray(pp)) $('pp_list').innerHTML = pp.map(x =>
+    `<div class="svc"><span><span class="dot" style="background:${x.home ? 'var(--ok)' : 'var(--muted)'}"></span>${x.name}</span>` +
+    `<span class="sub">${x.home ? T.home : T.away}${x.seen_min_ago != null && !x.home ? ' · ' + T.seen.replace('{m}', x.seen_min_ago) : ''}</span></div>`).join('');
+  const pr = h.printer;
+  show('pr', pr && pr.inks);
+  if (pr && pr.inks) $('pr_ink').innerHTML = pr.inks.map(k =>
+    `<div title="${T[k.color] || k.color}"><div class="tank"><i style="height:${k.level}%;background:${INK[k.color] || '#888'}"></i></div>${k.level}%</div>`).join('');
+}
 refresh(); setInterval(refresh, 10000);
 </script>
 </body></html>"""
@@ -222,7 +382,7 @@ refresh(); setInterval(refresh, 10000);
 def render():
     text = TEXT.get(LANG, TEXT["en"])
     page = PAGE.replace("__TEXT__", json.dumps(text)).replace("__LANG__", LANG)
-    for key in ("title", "battery", "temp", "ram", "disk", "services", "history"):
+    for key in ("title", "battery", "temp", "ram", "disk", "services", "history", "starlink", "people", "printer"):
         page = page.replace(f"__{key.upper()}__", text[key])
     return page.encode()
 
@@ -249,4 +409,5 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     # the first battery read can take a while; serve the page meanwhile
     threading.Thread(target=battery_logger, daemon=True).start()
+    start_home_readers()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

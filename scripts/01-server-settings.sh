@@ -11,7 +11,9 @@ if [ "${1:-}" = "--revert" ]; then
     device_config put activity_manager max_phantom_processes 32
     device_config set_sync_disabled_for_tests none
     settings put global adaptive_battery_management_enabled 1
-    settings delete global battery_tip_constants'
+    settings delete global battery_tip_constants
+    settings delete global app_auto_restriction_enabled
+    settings delete global anomaly_detection_constants'
   exit 0
 fi
 
@@ -28,6 +30,10 @@ adb shell settings put global adaptive_battery_management_enabled 0
 # force-stopped Termux too (SSH went down).
 say "Turning off the Battery manager's automatic app restrictions"
 adb shell settings put global battery_tip_constants app_restriction_enabled=false
+# Settings also runs a hidden "anomaly detector" job that restricts and force-stops apps on its
+# own; it kept putting Termux:API to sleep on the test phone (no more battery readings).
+adb shell 'settings put global app_auto_restriction_enabled 0
+  settings put global anomaly_detection_constants anomaly_detection_enabled=false'
 
 say "Result"
 adb shell 'echo "  phantom process monitor: $(settings get global settings_enable_monitor_phantom_procs)"

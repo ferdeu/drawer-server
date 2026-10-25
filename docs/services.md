@@ -16,7 +16,7 @@ Leave ~1 GB for Android itself, so plan with **~4–4.5 GB** for services.
 | **Luanti + Mineclonia** (free Minecraft-like game) | a world for the kids; free clients on Android and Windows | **270–320 MB** | low; lag spike only while a new player downloads the textures | ⭐⭐ medium | ✅ `scripts/07-luanti.sh` |
 | **Minecraft Java server** (Paper 26.2, Java 25) | a world for the kids | **1.3 GB** idle, plan 2 GB with players | **~33% of one core** idle (of 8 cores) | ⭐⭐ medium | 🧪 measured, script pending |
 | **Syncthing** | automatic photo/file backup between phones and computers | **29 MB** idle | ~0 idle, bursts while syncing | ⭐⭐ medium | 🧪 measured, script pending |
-| **Status panel** (small Python web page) | battery, temperature, RAM, disk, services, 24 h battery chart | **~25 MB** | ~0 | ⭐ easy | ✅ `scripts/08-panel.sh` → `http://<phone-ip>:8080` |
+| **Status panel** (small Python web page) | battery, temperature, RAM, disk, services, 24 h battery chart, charge reminder; optional Starlink dish stats, Epson ink levels and who's home | **~25 MB** | ~0 | ⭐ easy | ✅ `scripts/08-panel.sh` → `http://<phone-ip>:8080` |
 | **Camera recorder** (ffmpeg, RTSP) | record Wi-Fi cameras 24/7 or by schedule | est. 30–60 MB per camera | low (copies the video, doesn't re-encode) | ⭐⭐ medium | ⏳ needs the cameras' RTSP password |
 | **Jellyfin** ("home Netflix") | movies and shows on the TV/Chromecast | est. 300–500 MB (runs inside a Debian container, `proot-distro`) | fine if the TV plays the file as-is; re-encoding video is too heavy for a phone CPU | ⭐⭐⭐ hard | ⏳ not measured |
 | **Uptime monitor** (e.g. Uptime Kuma) | logs when the internet goes down | est. 80–120 MB | low | ⭐⭐ medium | 💡 idea |
@@ -47,6 +47,16 @@ Jellyfin (~0.5 GB) also fits on RAM, but avoid using it while kids are playing M
 both want the CPU. Storage is the other limit: video recording fills disks fast
 (a 1080p camera stream is roughly 15–40 GB per day), so recorder setups need a retention limit
 or the cameras' lower-resolution sub-stream.
+
+## Panel home cards
+
+Set in `.env`, then re-run `scripts/08-panel.sh`:
+
+| Card | Setting | How it works |
+|---|---|---|
+| 🛰️ Starlink | `PANEL_STARLINK=yes` | the dish's local gRPC API at `192.168.100.1:9200` (`grpcurl`), no account needed |
+| 🖨️ Epson ink | `PANEL_PRINTER_IP=…` | Epson's own SNMP status query (`@BDC ST2`), works on old models like the XP-211 that don't fill the standard printer-supplies table |
+| 🏠 Who's home | `PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"` | pings each phone every 2 min; "home" if it answered in the last 20 min (sleeping phones skip pings). Give those phones fixed IPs in the router. |
 
 ## Luanti notes (from the test)
 

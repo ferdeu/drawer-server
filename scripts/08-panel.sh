@@ -16,9 +16,23 @@ phone_ssh "$HOST" 'mkdir -p ~/panel'
 scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
   "$REPO_ROOT/termux/panel/panel.py" "$TERMUX_USER@$HOST:panel/panel.py"
 
-say "Installing Python and starting the panel (starts on boot too)"
+# Optional home cards, configured from .env:
+#   PANEL_STARLINK=yes                      read the Starlink dish (192.168.100.1)
+#   PANEL_PRINTER_IP=192.168.1.210          Epson ink levels
+#   PANEL_PEOPLE="Fer=192.168.1.203,Carla=192.168.1.205"   who's home (give their phones fixed IPs)
+PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
+
+say "Installing tools and starting the panel (starts on boot too)"
 phone_ssh "$HOST" "set -e
 command -v python >/dev/null || pkg install -y python >/dev/null 2>&1
+command -v grpcurl >/dev/null || pkg install -y grpcurl >/dev/null 2>&1
+command -v snmpget >/dev/null || pkg install -y net-snmp >/dev/null 2>&1
+C=~/.config/drawer-server; mkdir -p \$C
+rm -f \$C/starlink \$C/printer \$C/people
+[ '${PANEL_STARLINK:-}' = yes ] && touch \$C/starlink
+[ -n '${PANEL_PRINTER_IP:-}' ] && echo '${PANEL_PRINTER_IP:-}' > \$C/printer
+[ -n '$PEOPLE_LINES' ] && printf '%s\n' '$PEOPLE_LINES' > \$C/people
+true
 cat > ~/.termux/boot/40-panel.sh <<'EOF'
 #!/data/data/com.termux/files/usr/bin/sh
 # start the status panel unless it's already running
