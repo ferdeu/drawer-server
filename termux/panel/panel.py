@@ -364,6 +364,8 @@ PAGE = """<!doctype html>
 <script>
 const T = __TEXT__;
 const $ = id => document.getElementById(id);
+// names come from config files, game logs and other phones: never insert them as HTML
+const esc = v => String(v).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 function color(ok) { return ok ? 'var(--ok)' : 'var(--bad)'; }
 async function refresh() {
   try {
@@ -380,7 +382,7 @@ async function refresh() {
     $('up').textContent = s.uptime_h != null ? T.uptime + ' ' + s.uptime_h + T.hours : '';
     $('svcs').innerHTML = s.services.map(v => {
       let detail = '';
-      if (v.players) detail = v.players.length ? v.players.length + ' ' + T.players + ': ' + v.players.join(', ') : T.nobody;
+      if (v.players) detail = v.players.length ? v.players.length + ' ' + T.players + ': ' + esc(v.players.join(', ')) : T.nobody;
       return `<div class="svc"><span><span class="dot" style="background:${color(v.ok)}"></span>${v.name}</span><span class="sub">${detail}</span></div>`;
     }).join('');
     drawChart(s.history);
@@ -416,7 +418,7 @@ function drawHome(h) {
   const pp = h.people;
   show('pp', Array.isArray(pp));
   if (Array.isArray(pp)) $('pp_list').innerHTML = pp.map(x =>
-    `<div class="svc"><span><span class="dot" style="background:${x.home ? 'var(--ok)' : 'var(--muted)'}"></span>${x.name}</span>` +
+    `<div class="svc"><span><span class="dot" style="background:${x.home ? 'var(--ok)' : 'var(--muted)'}"></span>${esc(x.name)}</span>` +
     `<span class="sub">${x.home ? T.home : T.away}${x.seen_min_ago != null && !x.home ? ' · ' + T.seen.replace('{m}', x.seen_min_ago) : ''}</span></div>`).join('');
   const bk = h.backup;
   show('bk', bk && bk.folders && bk.folders.length);
@@ -424,13 +426,13 @@ function drawHome(h) {
     const fill = s => s.replace('{p}', f.pct).replace('{gb}', f.need_gb).replace('{n}', f.need_files);
     const st = !f.need_files ? T.up_to_date
              : f.online ? fill(T.receiving) + (bk.mb_s ? ' · ' + bk.mb_s + ' MB/s' : '') : fill(T.waiting);
-    return `<div class="svc"><span><span class="dot" style="background:${f.online ? 'var(--ok)' : 'var(--muted)'}"></span>${f.label}</span>` +
+    return `<div class="svc"><span><span class="dot" style="background:${f.online ? 'var(--ok)' : 'var(--muted)'}"></span>${esc(f.label)}</span>` +
       `<span class="sub">${st}</span></div>` + (f.need_files ? `<div class="bar"><i style="width:${f.pct}%"></i></div>` : '');
   }).join('');
   const pr = h.printer;
   show('pr', pr && pr.inks);
   if (pr && pr.inks) $('pr_ink').innerHTML = pr.inks.map(k =>
-    `<div title="${T[k.color] || k.color}"><div class="tank"><i style="height:${k.level}%;background:${INK[k.color] || '#888'}"></i></div>${k.level}%</div>`).join('');
+    `<div title="${esc(T[k.color] || k.color)}"><div class="tank"><i style="height:${k.level}%;background:${INK[k.color] || '#888'}"></i></div>${k.level}%</div>`).join('');
 }
 refresh(); setInterval(refresh, 10000);
 </script>

@@ -65,6 +65,13 @@ EOF
   has_pending() { [ -n "$(pending)" ]; }
   wait_for "Add the server on $WHO's phone (scan the QR code)" 900 has_pending
   DEV="$(pending)"
+  # device IDs are A-Z, 2-7 and dashes; anything else didn't come from a real Syncthing
+  [[ "$DEV" =~ ^[A-Z0-9-]{50,70}$ ]] || die "Unexpected device ID: $DEV"
+  n="$(phone_ssh "$HOST" "syncthing cli show pending devices | jq 'length'" | tr -d '
+')"
+  [ "$n" = "1" ] || die "$n phones are asking to connect. Check them at http://$HOST:8384 and accept $WHO's by hand."
+  echo "  $WHO's phone asked to connect: $DEV"
+  echo "  (it should match the ID in Syncthing-Fork > Settings > Show device ID on $WHO's phone)"
   phone_ssh "$HOST" "syncthing cli config devices add --device-id '$DEV' --name '$WHO'"
   echo "  paired: $WHO = $DEV"
 fi
@@ -82,6 +89,9 @@ wait_for "Share the Camera folder with Server on $WHO's phone" 900 has_folder
 # accept every folder this phone offers: receive-only, and phone deletions are ignored
 while F="$(pending_folder)"; [ -n "$F" ]; do
   ID="${F%%|*}"; LABEL="${F#*|}"; LABEL="${LABEL:-$ID}"
+  # both come from the other phone: never let them reach the shell or the path as-is
+  case "$ID" in ''|*[!A-Za-z0-9_.-]*) die "Folder ID with unusual characters ($ID). Accept it by hand at http://$HOST:8384" ;; esac
+  LABEL="$(printf '%s' "$LABEL" | tr -c 'A-Za-z0-9 _.-' '_' | sed 's/^[. ]*//')"; LABEL="${LABEL:-folder}"
   phone_ssh "$HOST" "set -e
 ST='syncthing cli config folders'
 \$ST add --id '$ID' --label '$WHO - $LABEL' --path '/sdcard/Backups/$WHO/$LABEL' --type receiveonly
