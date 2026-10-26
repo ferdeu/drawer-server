@@ -17,7 +17,8 @@ through the whole learning process.
 - 🔋 **Stays alive 24/7:** Android won't kill it in the background, and it starts by itself when the phone reboots.
 - 🌍 **Access from outside home** with [Tailscale](https://tailscale.com), even on Starlink or other
   connections where opening router ports doesn't work.
-- 🧩 Ready for services: Minecraft server, photo backup, media server, scripts and bots… (see [docs/services.md](docs/services.md))
+- 🧩 Services, one script each: whole-home ad blocking, a game server for kids, a status panel and
+  photo backup from the family's phones. More ideas in [docs/services.md](docs/services.md).
 
 **Path A doesn't unlock, root or erase the phone.** Your apps and photos stay where they are, and
 every setting can be reverted (`bash scripts/01-server-settings.sh --revert`, then uninstall the apps).
@@ -57,7 +58,7 @@ Using an AI coding agent? Point it at [AGENTS.md](AGENTS.md) and it can drive th
 
 | Phone | Android | Result |
 |---|---|---|
-| Motorola **Moto G24 Power** (XT2425-1, `fogorow`, MediaTek Helio G85, 8 GB RAM) | 14 | ✅ Path A steps 0–5 working |
+| Motorola **Moto G24 Power** (XT2425-1, `fogorow`, MediaTek Helio G85, 8 GB RAM) | 14 | ✅ Path A steps 0–9 working |
 
 Path A uses only standard Android features, so it should work on most phones running **Android 11 or newer**.
 If you try another phone, please open an issue or PR with your results.
@@ -81,8 +82,9 @@ If you try another phone, please open an issue or PR with your results.
 - [x] Step 6: whole-home ad blocking (NextDNS + the phone keeps the linked IP updated)
 - [x] Step 7: game server for kids (Luanti + Mineclonia, free on Android and Windows)
 - [x] Step 8: status panel (battery, temperature, memory, services, 24 h battery chart)
+- [x] Step 9: photo backup from each family phone with Syncthing (`bash scripts/09-syncthing.sh <name>`, once per phone)
 - [ ] Battery care for an always-plugged phone (smart plug, see docs/devices)
-- [ ] Services: photo backup, camera recorder, Jellyfin…
+- [ ] Services: camera recorder, Jellyfin…
 
 ## Repo layout
 

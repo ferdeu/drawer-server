@@ -10,12 +10,13 @@
 # Android > Termux > Debian > luantiserver.
 #
 #   bash scripts/07-luanti.sh                install + start (safe to re-run)
-#   LUANTI_ADMIN=Fer bash scripts/07-luanti.sh   that player name gets all privileges
+#   LUANTI_ADMIN=Ana bash scripts/07-luanti.sh   that player name gets all privileges
 source "$(dirname "$0")/lib.sh"
 
 load_phone_env
 HOST="${PHONE_LAN_IP:?run scripts/04-network.sh first}"
 ADMIN="${LUANTI_ADMIN:-admin}"
+[ -n "${LUANTI_ADMIN:-}" ] || warn "No LUANTI_ADMIN in .env: the admin is the player named 'admin'. Join with that name first, or someone else can claim it."
 PORT="${LUANTI_PORT:-30000}"
 
 say "Finding the latest Mineclonia release"

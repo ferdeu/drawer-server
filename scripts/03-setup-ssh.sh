@@ -62,5 +62,7 @@ ssh -i "$KEY" -p 8022 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
   "$TUSER@127.0.0.1" 'echo "Hello from $(uname -m) Termux, $(nproc) CPU cores, uptime: $(uptime)"'
 
 mkdir -p "$REPO_ROOT/local"
-echo "TERMUX_USER=$TUSER" > "$REPO_ROOT/local/phone.env"
+touch "$REPO_ROOT/local/phone.env"
+{ grep -v '^TERMUX_USER=' "$REPO_ROOT/local/phone.env"; echo "TERMUX_USER=$TUSER"; } > "$REPO_ROOT/local/phone.env.tmp"
+mv "$REPO_ROOT/local/phone.env.tmp" "$REPO_ROOT/local/phone.env"
 say "SSH works. Termux user: $TUSER (saved in local/phone.env)"

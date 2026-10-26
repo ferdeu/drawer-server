@@ -18,8 +18,8 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 
 # Optional home cards, configured from .env:
 #   PANEL_STARLINK=yes                      read the Starlink dish (192.168.100.1)
-#   PANEL_PRINTER_IP=192.168.1.210          Epson ink levels
-#   PANEL_PEOPLE="Fer=192.168.1.203,Carla=192.168.1.205"   who's home (give their phones fixed IPs)
+#   PANEL_PRINTER_IP=192.168.1.30           Epson ink levels
+#   PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"   who's home (give their phones fixed IPs)
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
 
 say "Installing tools and starting the panel (starts on boot too)"

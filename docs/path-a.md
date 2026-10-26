@@ -95,7 +95,7 @@ straight from f-droid.org.
 5. Tests SSH through the USB cable.
 
 Termux's SSH listens on port **8022**, not 22, because ports under 1024 need root.
-The Termux username looks like `u0_a281`; it gets saved in `local/phone.env`.
+The Termux username looks like `u0_a123`; it gets saved in `local/phone.env`.
 
 You'll see a permanent notification "Termux: wake lock held". That's how you know it's awake.
 
@@ -138,6 +138,10 @@ kills Termux until it is opened again. To avoid it, **lock Termux in recents**: 
 recent-apps screen (■ button), and on Motorola tap the **padlock** under the Termux card.
 It confirms with *"A locked app can't be cleared"*, and "Clear all" skips it from then on.
 
+The other way to stop it by accident is the **Exit** button on Termux's notification: it closes every
+Termux session, and a few minutes later Android cleans up the rest of the server. If other people use
+the phone, tell them to leave Termux's notification alone.
+
 <img src="img/lock-termux-in-recents.jpg" alt="Motorola recent apps screen with Termux's card; under it a padlock button is enabled and the message reads 'La aplicación bloqueada no puede borrarse' (A locked app can't be cleared)." width="280">
 
 Don't confuse it with **screen pinning** ("App pinned", unpin by holding Back + Recents): that
@@ -157,8 +161,13 @@ screen off, and a screen that's always on heats the phone, which is bad for the 
 ## Undoing everything
 
 ```bash
-bash scripts/01-server-settings.sh --revert
+bash scripts/01-server-settings.sh --revert       # Android's background-killing settings
+bash scripts/extra-debloat.sh --revert            # only if you ran it: brings back preinstalled apps
+adb shell settings delete secure always_on_vpn_app
 adb uninstall com.termux.boot && adb uninstall com.termux.api && adb uninstall com.termux
 ```
 
-Then remove the router reservation, and Tailscale if you want.
+Uninstalling Termux deletes everything inside it (the services from steps 6–9, the game world, the
+panel's history) but **not** the photo backups, which live in the phone's storage under `Backups/`.
+Then remove the router reservation, the NextDNS DNS servers from the router if you set them, and
+Tailscale if you want.

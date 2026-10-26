@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import threading
 import time
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -130,12 +132,12 @@ def uptime_hours():
         return None
 
 
-# --- Home: Starlink, printer, who's home -------------------------------------------------
+# --- Home: Starlink, printer, who's home, photo backup -------------------------------------------------
 # Each reader runs in its own thread every few minutes and leaves its last result here,
 # so a page load never waits on the network.
 CONFIG = HOME / ".config" / "drawer-server"
 STARLINK_DISH = os.environ.get("STARLINK_DISH", "192.168.100.1:9200")
-_home = {"starlink": None, "printer": None, "people": None}
+_home = {"starlink": None, "printer": None, "people": None, "backup": None}
 
 
 def every(seconds, key, reader):
@@ -215,6 +217,42 @@ def people():
     return result
 
 
+SYNCTHING_CONFIG = HOME / ".local" / "state" / "syncthing" / "config.xml"
+_sync_prev = {}
+
+
+def backup():
+    """Photo backup (scripts/09-syncthing.sh): each folder's progress and whether the phone that
+    sends it is connected, from Syncthing's local REST API."""
+    key = re.search(r"<apikey>([^<]+)</apikey>", SYNCTHING_CONFIG.read_text()).group(1)
+
+    def get(path):
+        req = urllib.request.Request("http://127.0.0.1:8384" + path, headers={"X-API-Key": key})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.load(r)
+
+    me = get("/rest/system/status")["myID"]
+    names = {d["deviceID"]: d["name"] for d in get("/rest/config/devices")}
+    conns = get("/rest/system/connections")
+    online = {d for d, c in conns["connections"].items() if c.get("connected")}
+    # download speed from the change in bytes received since the last call
+    now, received = time.time(), conns["total"]["inBytesTotal"]
+    t0, r0 = _sync_prev.get("t"), _sync_prev.get("in", 0)
+    speed = (received - r0) / (now - t0) / 1e6 if t0 and received >= r0 else 0
+    _sync_prev["t"], _sync_prev["in"] = now, received
+    folders = []
+    for f in get("/rest/config/folders"):
+        st = get("/rest/db/status?folder=" + urllib.parse.quote(f["id"]))
+        senders = [d["deviceID"] for d in f["devices"] if d["deviceID"] != me]
+        total, need = st["globalBytes"], st["needBytes"]
+        folders.append({"label": f["label"] or f["id"],
+                        "from": ", ".join(names.get(d, d[:7]) for d in senders),
+                        "online": any(d in online for d in senders),
+                        "pct": 100 if not total else int((total - need) * 100 / total),
+                        "need_gb": round(need / 1e9, 1), "need_files": st["needFiles"]})
+    return {"folders": folders, "mb_s": round(speed, 1)}
+
+
 def start_home_readers():
     if (CONFIG / "starlink").exists():
         every(60, "starlink", starlink)
@@ -222,6 +260,8 @@ def start_home_readers():
         every(600, "printer", printer)
     if (CONFIG / "people").exists():
         every(120, "people", people)
+    if SYNCTHING_CONFIG.exists():
+        every(30, "backup", backup)
 
 
 def status():
@@ -233,6 +273,8 @@ def status():
         players = luanti_players()
         services.append({"name": "Luanti", "ok": pid_alive(HOME / "luanti" / "server.pid") and process_running("luantiserver"),
                          "players": players})
+    if (HOME / ".termux" / "boot" / "50-syncthing.sh").exists():
+        services.append({"name": "Syncthing", "ok": pid_alive(HOME / ".cache" / "syncthing.pid")})
     history = []
     if BATTERY_LOG.exists():
         day_ago = time.time() - 24 * 3600
@@ -255,7 +297,9 @@ TEXT = {
            "starlink": "Starlink", "latency": "latency", "obstructed": "obstructed", "dish_up": "dish on for",
            "printer": "Printer ink", "people": "Who's home", "home": "home", "away": "away",
            "api_asleep": "⚠️ Can't read the battery: Android put Termux:API to sleep. Run scripts/restart-server.sh with the phone plugged into the computer.",
-           "seen": "seen {m} min ago", "black": "black", "cyan": "cyan", "magenta": "magenta", "yellow": "yellow"},
+           "seen": "seen {m} min ago", "backup": "Photo backup",
+           "receiving": "receiving {p}%: {gb} GB left ({n} files)", "up_to_date": "up to date ✓",
+           "waiting": "{p}%, {gb} GB to go: waiting for the phone (on home Wi-Fi with Syncthing open)", "black": "black", "cyan": "cyan", "magenta": "magenta", "yellow": "yellow"},
     "es": {"title": "Servidor del cajón", "battery": "Batería", "temp": "Temperatura", "ram": "Memoria libre",
            "disk": "Espacio libre", "uptime": "Prendido hace", "hours": "h", "services": "Servicios",
            "players": "jugando", "nobody": "nadie jugando", "history": "Batería, últimas 24 h",
@@ -265,7 +309,9 @@ TEXT = {
            "starlink": "Starlink", "latency": "latencia", "obstructed": "obstruido", "dish_up": "antena prendida hace",
            "printer": "Tinta de la impresora", "people": "¿Quién está en casa?", "home": "en casa", "away": "afuera",
            "api_asleep": "⚠️ No puedo leer la batería: Android durmió a Termux:API. Corré scripts/restart-server.sh con el celu enchufado a la compu.",
-           "seen": "visto hace {m} min", "black": "negro", "cyan": "cian", "magenta": "magenta", "yellow": "amarillo"},
+           "seen": "visto hace {m} min", "backup": "Backup de fotos",
+           "receiving": "recibiendo {p}%: faltan {gb} GB ({n} archivos)", "up_to_date": "al día ✓",
+           "waiting": "{p}%, faltan {gb} GB: esperando al celu (en el WiFi de casa con Syncthing abierto)", "black": "negro", "cyan": "cian", "magenta": "magenta", "yellow": "amarillo"},
 }
 
 PAGE = """<!doctype html>
@@ -296,6 +342,8 @@ PAGE = """<!doctype html>
   .tank { background:#8882; border-radius:6px; position:relative; height:60px; overflow:hidden; margin-bottom:4px; }
   .tank i { position:absolute; bottom:0; left:0; right:0; border-radius:6px; }
   .hidden { display:none; }
+  .bar { background:#8882; border-radius:4px; height:6px; overflow:hidden; margin:2px 0 6px; }
+  .bar i { display:block; height:100%; background:var(--ok); }
 </style></head>
 <body>
 <h1>📱 __TITLE__</h1>
@@ -307,6 +355,7 @@ PAGE = """<!doctype html>
   <div class="card"><div class="label">💾 __DISK__</div><div class="big" id="disk">–</div><div class="sub" id="up"></div></div>
   <div class="card wide"><div class="label">⚙️ __SERVICES__</div><div id="svcs"></div></div>
   <div class="card wide hidden" id="sl"><div class="label">🛰️ __STARLINK__</div><div class="big" id="sl_lat"></div><div class="sub" id="sl_sub"></div></div>
+  <div class="card wide hidden" id="bk"><div class="label">📷 __BACKUP__</div><div id="bk_list"></div></div>
   <div class="card hidden" id="pp"><div class="label">🏠 __PEOPLE__</div><div id="pp_list"></div></div>
   <div class="card hidden" id="pr"><div class="label">🖨️ __PRINTER__</div><div class="ink" id="pr_ink"></div></div>
   <div class="card wide"><div class="label">📈 __HISTORY__</div><svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg></div>
@@ -369,6 +418,15 @@ function drawHome(h) {
   if (Array.isArray(pp)) $('pp_list').innerHTML = pp.map(x =>
     `<div class="svc"><span><span class="dot" style="background:${x.home ? 'var(--ok)' : 'var(--muted)'}"></span>${x.name}</span>` +
     `<span class="sub">${x.home ? T.home : T.away}${x.seen_min_ago != null && !x.home ? ' · ' + T.seen.replace('{m}', x.seen_min_ago) : ''}</span></div>`).join('');
+  const bk = h.backup;
+  show('bk', bk && bk.folders && bk.folders.length);
+  if (bk && bk.folders) $('bk_list').innerHTML = bk.folders.map(f => {
+    const fill = s => s.replace('{p}', f.pct).replace('{gb}', f.need_gb).replace('{n}', f.need_files);
+    const st = !f.need_files ? T.up_to_date
+             : f.online ? fill(T.receiving) + (bk.mb_s ? ' · ' + bk.mb_s + ' MB/s' : '') : fill(T.waiting);
+    return `<div class="svc"><span><span class="dot" style="background:${f.online ? 'var(--ok)' : 'var(--muted)'}"></span>${f.label}</span>` +
+      `<span class="sub">${st}</span></div>` + (f.need_files ? `<div class="bar"><i style="width:${f.pct}%"></i></div>` : '');
+  }).join('');
   const pr = h.printer;
   show('pr', pr && pr.inks);
   if (pr && pr.inks) $('pr_ink').innerHTML = pr.inks.map(k =>
@@ -382,7 +440,7 @@ refresh(); setInterval(refresh, 10000);
 def render():
     text = TEXT.get(LANG, TEXT["en"])
     page = PAGE.replace("__TEXT__", json.dumps(text)).replace("__LANG__", LANG)
-    for key in ("title", "battery", "temp", "ram", "disk", "services", "history", "starlink", "people", "printer"):
+    for key in ("title", "battery", "temp", "ram", "disk", "services", "history", "starlink", "people", "printer", "backup"):
         page = page.replace(f"__{key.upper()}__", text[key])
     return page.encode()
 
