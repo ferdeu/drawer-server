@@ -137,7 +137,7 @@ def uptime_hours():
 # so a page load never waits on the network.
 CONFIG = HOME / ".config" / "drawer-server"
 STARLINK_DISH = os.environ.get("STARLINK_DISH", "192.168.100.1:9200")
-_home = {"starlink": None, "printer": None, "people": None, "backup": None}
+_home = {"starlink": None, "printer": None, "people": None, "backup": None, "devices": None}
 
 
 def every(seconds, key, reader):
@@ -253,6 +253,74 @@ def backup():
     return {"folders": folders, "mb_s": round(speed, 1)}
 
 
+# Ezviz (Hikvision) cameras and doorbells; the rest is guessed from the name the device reports
+CAMERA_MACS = ("F4-70-18", "0C-A6-4C")
+KINDS = ("camera", "computer", "phone", "network", "other")
+DEVICES_SEEN = DATA / "devices.json"
+
+
+def device_kind(name, mac):
+    n = name.lower()
+    if mac.startswith(CAMERA_MACS) or re.search(r"cam|timbre|doorbell|ezviz", n):
+        return "camera"
+    if re.search(r"desktop|laptop|lenovo|notebook|macbook|imac|pc", n):
+        return "computer"
+    if re.search(r"archer|deco|router|repeater|extender", n):
+        return "network"
+    # phones make up a "private" MAC per network: the second hex digit is 2, 6, A or E
+    if re.search(r"celu|phone|iphone|galaxy|moto|pixel", n) or mac[1:2] in "26AE":
+        return "phone"
+    return "other"
+
+
+def devices():
+    """Everything connected to the home router (TP-Link, through its web API), plus devices seen
+    before that are gone now, so a camera that drops off the Wi-Fi shows up as offline.
+    Config: router URL and password in ~/.config/drawer-server/router (one per line), optional
+    'MAC Name' lines in ~/.config/drawer-server/device-names."""
+    from tplinkrouterc6u import TplinkRouterProvider  # only installed when the router card is on
+    url, password = (CONFIG / "router").read_text().splitlines()[:2]
+    names = {}
+    if (CONFIG / "device-names").exists():
+        for line in (CONFIG / "device-names").read_text().splitlines():
+            if line.strip():
+                mac, name = line.split(None, 1)
+                names[mac.upper().replace(":", "-")] = name.strip()
+    router = TplinkRouterProvider.get_client(url, password)
+    router.authorize()  # TP-Link allows one admin at a time: this logs out a browser session
+    try:
+        connected = router.get_status().devices
+        try:
+            ssid = router.request("admin/wireless?form=wireless_2g", "operation=read").get("ssid")
+        except Exception:
+            ssid = None
+    finally:
+        router.logout()
+    seen = json.loads(DEVICES_SEEN.read_text()) if DEVICES_SEEN.exists() else {}
+    now, online = time.time(), set()
+    for d in connected:
+        mac = str(d.macaddr).upper()
+        online.add(mac)
+        conn = {"WIRED": "wired", "HOST_2G": "2.4", "HOST_5G": "5", "GUEST_2G": "2.4", "GUEST_5G": "5"}.get(
+            getattr(d.type, "name", ""), "wifi")
+        ip = str(d.ipaddr)
+        seen[mac] = {"host": d.hostname if d.hostname and d.hostname != "network device" else seen.get(mac, {}).get("host"),
+                     "ip": None if ip == "0.0.0.0" else ip, "conn": conn,
+                     "signal": d.signal if conn != "wired" else None, "last": now}
+    result = []
+    for mac, d in list(seen.items()):
+        if now - d["last"] > 30 * 86400:  # forget devices gone for a month
+            del seen[mac]
+            continue
+        name = names.get(mac) or d["host"] or (d["ip"] or mac)
+        result.append({"name": name, "kind": device_kind(name, mac), "ip": d["ip"] if mac in online else None,
+                       "conn": d["conn"], "signal": d["signal"], "online": mac in online,
+                       "seen_min_ago": round((now - d["last"]) / 60)})
+    DEVICES_SEEN.write_text(json.dumps(seen))
+    result.sort(key=lambda x: (KINDS.index(x["kind"]), not x["online"], x["name"].lower()))
+    return {"ssid": ssid, "devices": result}
+
+
 def start_home_readers():
     if (CONFIG / "starlink").exists():
         every(60, "starlink", starlink)
@@ -260,6 +328,8 @@ def start_home_readers():
         every(600, "printer", printer)
     if (CONFIG / "people").exists():
         every(120, "people", people)
+    if (CONFIG / "router").exists():
+        every(300, "devices", devices)
     if SYNCTHING_CONFIG.exists():
         every(30, "backup", backup)
 
@@ -297,7 +367,11 @@ TEXT = {
            "starlink": "Starlink", "latency": "latency", "obstructed": "obstructed", "dish_up": "dish on for",
            "printer": "Printer ink", "people": "Who's home", "home": "home", "away": "away",
            "api_asleep": "⚠️ Can't read the battery: Android put Termux:API to sleep. Run scripts/restart-server.sh with the phone plugged into the computer.",
-           "seen": "seen {m} min ago", "backup": "Photo backup",
+           "seen": "seen {m} ago", "devices": "Devices",
+           "on": "on", "wired": "cable", "no_ip": "connected but the router gave it no address",
+           "offline": "offline", "weak": "weak signal",
+           "camera": "Cameras", "computer": "Computers", "phone": "Phones", "network": "Network", "other": "Other",
+           "backup": "Photo backup",
            "receiving": "receiving {p}%: {gb} GB left ({n} files)", "up_to_date": "up to date ✓",
            "waiting": "{p}%, {gb} GB to go: waiting for the phone (on home Wi-Fi with Syncthing open)", "black": "black", "cyan": "cyan", "magenta": "magenta", "yellow": "yellow"},
     "es": {"title": "Servidor del cajón", "battery": "Batería", "temp": "Temperatura", "ram": "Memoria libre",
@@ -309,7 +383,11 @@ TEXT = {
            "starlink": "Starlink", "latency": "latencia", "obstructed": "obstruido", "dish_up": "antena prendida hace",
            "printer": "Tinta de la impresora", "people": "¿Quién está en casa?", "home": "en casa", "away": "afuera",
            "api_asleep": "⚠️ No puedo leer la batería: Android durmió a Termux:API. Corré scripts/restart-server.sh con el celu enchufado a la compu.",
-           "seen": "visto hace {m} min", "backup": "Backup de fotos",
+           "seen": "visto hace {m}", "devices": "Dispositivos",
+           "on": "en", "wired": "cable", "no_ip": "conectado pero el router no le dio dirección",
+           "offline": "desconectado", "weak": "señal débil",
+           "camera": "Cámaras", "computer": "Computadoras", "phone": "Celulares", "network": "Red", "other": "Otros",
+           "backup": "Backup de fotos",
            "receiving": "recibiendo {p}%: faltan {gb} GB ({n} archivos)", "up_to_date": "al día ✓",
            "waiting": "{p}%, faltan {gb} GB: esperando al celu (en el WiFi de casa con Syncthing abierto)", "black": "negro", "cyan": "cian", "magenta": "magenta", "yellow": "amarillo"},
 }
@@ -342,6 +420,7 @@ PAGE = """<!doctype html>
   .tank { background:#8882; border-radius:6px; position:relative; height:60px; overflow:hidden; margin-bottom:4px; }
   .tank i { position:absolute; bottom:0; left:0; right:0; border-radius:6px; }
   .hidden { display:none; }
+  .kind { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin:10px 0 0; }
   .bar { background:#8882; border-radius:4px; height:6px; overflow:hidden; margin:2px 0 6px; }
   .bar i { display:block; height:100%; background:var(--ok); }
 </style></head>
@@ -356,6 +435,7 @@ PAGE = """<!doctype html>
   <div class="card wide"><div class="label">⚙️ __SERVICES__</div><div id="svcs"></div></div>
   <div class="card wide hidden" id="sl"><div class="label">🛰️ __STARLINK__</div><div class="big" id="sl_lat"></div><div class="sub" id="sl_sub"></div></div>
   <div class="card wide hidden" id="bk"><div class="label">📷 __BACKUP__</div><div id="bk_list"></div></div>
+  <div class="card wide hidden" id="dv"><div class="label" id="dv_title"></div><div id="dv_list"></div></div>
   <div class="card hidden" id="pp"><div class="label">🏠 __PEOPLE__</div><div id="pp_list"></div></div>
   <div class="card hidden" id="pr"><div class="label">🖨️ __PRINTER__</div><div class="ink" id="pr_ink"></div></div>
   <div class="card wide"><div class="label">📈 __HISTORY__</div><svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg></div>
@@ -363,8 +443,10 @@ PAGE = """<!doctype html>
 <div class="foot" id="foot"></div>
 <script>
 const T = __TEXT__;
+const LANG_ES = document.documentElement.lang === 'es';
 const $ = id => document.getElementById(id);
 // names come from config files, game logs and other phones: never insert them as HTML
+const ago = m => m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + (LANG_ES ? ' días' : ' days');
 const esc = v => String(v).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 function color(ok) { return ok ? 'var(--ok)' : 'var(--bad)'; }
 async function refresh() {
@@ -415,11 +497,30 @@ function drawHome(h) {
     $('sl_sub').textContent = `⬇ ${sl.down_mbps} Mbps · ⬆ ${sl.up_mbps} Mbps · ${sl.obstructed_pct}% ${T.obstructed} · ${T.dish_up} ${sl.uptime_h}${T.hours}` +
       (sl.alerts.length ? ' · ⚠️ ' + sl.alerts.join(', ') : '');
   }
+  const dv = h.devices;
+  show('dv', dv && dv.devices);
+  if (dv && dv.devices) {
+    $('dv_title').textContent = '📶 ' + T.devices + (dv.ssid ? ' ' + T.on + ' ' + dv.ssid : '') +
+      ' (' + dv.devices.filter(d => d.online).length + ')';
+    const icon = {camera: '📷', computer: '💻', phone: '📱', network: '🌐', other: '🔌'};
+    let kind = '';
+    $('dv_list').innerHTML = dv.devices.map(d => {
+      const head = d.kind !== kind ? `<div class="kind">${icon[d.kind]} ${T[d.kind]}</div>` : '';
+      kind = d.kind;
+      const weak = d.signal != null && d.signal < -75;
+      const how = d.conn === 'wired' ? T.wired : d.conn + ' GHz' + (d.signal != null ? ' · ' + d.signal + ' dBm' : '');
+      const st = !d.online ? T.offline + ' · ' + T.seen.replace('{m}', ago(d.seen_min_ago))
+               : !d.ip ? '⚠️ ' + T.no_ip
+               : esc(d.ip) + ' · ' + how + (weak ? ' ⚠️ ' + T.weak : '');
+      return head + `<div class="svc"><span><span class="dot" style="background:${d.online && d.ip ? 'var(--ok)' : d.online ? 'var(--warn)' : 'var(--bad)'}"></span>${esc(d.name)}</span>` +
+        `<span class="sub"${weak ? ' style="color:var(--warn)"' : ''}>${st}</span></div>`;
+    }).join('');
+  }
   const pp = h.people;
   show('pp', Array.isArray(pp));
   if (Array.isArray(pp)) $('pp_list').innerHTML = pp.map(x =>
     `<div class="svc"><span><span class="dot" style="background:${x.home ? 'var(--ok)' : 'var(--muted)'}"></span>${esc(x.name)}</span>` +
-    `<span class="sub">${x.home ? T.home : T.away}${x.seen_min_ago != null && !x.home ? ' · ' + T.seen.replace('{m}', x.seen_min_ago) : ''}</span></div>`).join('');
+    `<span class="sub">${x.home ? T.home : T.away}${x.seen_min_ago != null && !x.home ? ' · ' + T.seen.replace('{m}', ago(x.seen_min_ago)) : ''}</span></div>`).join('');
   const bk = h.backup;
   show('bk', bk && bk.folders && bk.folders.length);
   if (bk && bk.folders) $('bk_list').innerHTML = bk.folders.map(f => {

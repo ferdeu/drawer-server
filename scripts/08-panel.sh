@@ -20,14 +20,30 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #   PANEL_STARLINK=yes                      read the Starlink dish (192.168.100.1)
 #   PANEL_PRINTER_IP=192.168.1.30           Epson ink levels
 #   PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"   who's home (give their phones fixed IPs)
+#   PANEL_ROUTER=tplink                     every device on the Wi-Fi, from a TP-Link router's web API
+#                                           (uses ROUTER_URL and ROUTER_PASSWORD)
+#   PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Doorbell,..."   names for devices that don't report one
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
+
+# the router password and the device names go over stdin, never inside a command line
+phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names'
+if [ "${PANEL_ROUTER:-}" = tplink ]; then
+  say "Router card: installing the TP-Link client (first time: ~2 minutes)"
+  [ -n "${ROUTER_URL:-}" ] && [ -n "${ROUTER_PASSWORD:-}" ] || die "PANEL_ROUTER=tplink needs ROUTER_URL and ROUTER_PASSWORD in .env"
+  printf '%s\n%s\n' "$ROUTER_URL" "$ROUTER_PASSWORD" | phone_ssh "$HOST" 'umask 077; cat > ~/.config/drawer-server/router'
+  phone_ssh "$HOST" "python -c 'import tplinkrouterc6u' 2>/dev/null || pip install -q tplinkrouterc6u"
+  if [ -n "${PANEL_DEVICE_NAMES:-}" ]; then
+    tr ',' '\n' <<<"$PANEL_DEVICE_NAMES" | sed -n 's/^ *\([0-9A-Fa-f:-]\{17\}\) *= *\(.*[^ ]\) *$/\1 \2/p' |
+      phone_ssh "$HOST" 'cat > ~/.config/drawer-server/device-names'
+  fi
+fi
 
 say "Installing tools and starting the panel (starts on boot too)"
 phone_ssh "$HOST" "set -e
 command -v python >/dev/null || pkg install -y python >/dev/null 2>&1
 command -v grpcurl >/dev/null || pkg install -y grpcurl >/dev/null 2>&1
 command -v snmpget >/dev/null || pkg install -y net-snmp >/dev/null 2>&1
-C=~/.config/drawer-server; mkdir -p \$C
+C=~/.config/drawer-server
 rm -f \$C/starlink \$C/printer \$C/people
 [ '${PANEL_STARLINK:-}' = yes ] && touch \$C/starlink
 [ -n '${PANEL_PRINTER_IP:-}' ] && echo '${PANEL_PRINTER_IP:-}' > \$C/printer

@@ -57,6 +57,7 @@ Set in `.env`, then re-run `scripts/08-panel.sh`:
 | 🛰️ Starlink | `PANEL_STARLINK=yes` | the dish's local gRPC API at `192.168.100.1:9200` (`grpcurl`), no account needed |
 | 🖨️ Epson ink | `PANEL_PRINTER_IP=…` | Epson's own SNMP status query (`@BDC ST2`), works on old models like the XP-211 that don't fill the standard printer-supplies table |
 | 🏠 Who's home | `PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"` | pings each phone every 2 min; "home" if it answered in the last 20 min (sleeping phones skip pings). Give those phones fixed IPs in the router. |
+| 📶 Wi-Fi devices | `PANEL_ROUTER=tplink` (+ `ROUTER_URL`, `ROUTER_PASSWORD`); optional `PANEL_DEVICE_NAMES="MAC=Name,…"` | asks a TP-Link router (web API, [tplinkrouterc6u](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)) every 5 min for everything connected: cameras, computers, phones, grouped, with cable/2.4/5 GHz and signal. Devices that leave show as offline for a month, and one that joins the Wi-Fi but never gets an address is flagged (a common reason cameras "go offline"). TP-Link allows one admin at a time, so each check logs out a browser open on the router page. |
 
 The panel also shows a 📷 **Photo backup** card by itself once step 9 is set up: each phone's
 folder, whether that phone is connected, how much is left and the download speed.
