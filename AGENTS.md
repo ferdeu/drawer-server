@@ -29,6 +29,31 @@ You are helping someone turn an old Android phone into a home server with this r
 - Explain things in plain words; people doing this may be beginners or kids.
 - `local/` holds per-phone data (IPs, Termux user). It's gitignored. Never commit it.
 
+## Where things are
+
+The human may name things loosely ("the panel", "the plug", "photos", "the game"). Map them here:
+
+| Topic | Files |
+|---|---|
+| Status panel web page and its cards | `termux/panel/panel.py`, deployed by `scripts/08-panel.sh`, cards set by `PANEL_*` in `.env` |
+| Charging between 30 and 80% (smart plug) | `scripts/10-smart-plug.sh`, `termux/plug-setup.py`; the cycling itself runs inside the panel |
+| Photo backup from family phones | `scripts/09-syncthing.sh` |
+| Game server for the kids | `scripts/07-luanti.sh` |
+| Ad blocking | `scripts/06-nextdns.sh` |
+| Access from outside home | `scripts/05-tailscale.sh` |
+| Wi-Fi, phone IPs | `scripts/04-network.sh`, saved in `local/phone.env` |
+| What runs when the phone boots | `termux/bootstrap.sh` |
+| Server down, SSH "Connection refused" | `scripts/restart-server.sh` (needs the cable) |
+| Shared helpers (`say`, `wait_for`, `phone_ssh`) | `scripts/lib.sh` |
+| Docs for humans | `README.md`, `docs/path-a.md`, `docs/services.md`, `docs/concepts.md` |
+
+## Checking your work (Claude Code)
+
+- `.claude/settings.json` runs shellcheck on every `.sh` you edit and a syntax check on `.py`; it
+  also asks the human before any command that could erase or unlock the phone.
+- After changing something that runs on the phone, deploy it and use the `check-server` skill.
+- Before committing, run the `path-a-reviewer` agent. To add a step, the human can use `/new-step`.
+
 ## Known gotchas
 
 - Git Bash rewrites `/sdcard/...` arguments into Windows paths; `lib.sh` sets `MSYS_NO_PATHCONV=1`

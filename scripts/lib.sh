@@ -12,10 +12,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Secrets live in .env (gitignored); see .env.example
 if [ -f "$REPO_ROOT/.env" ]; then
   set -a
-  # shellcheck disable=SC1091
+  # shellcheck disable=SC1090,SC1091
   source <(tr -d '\r' < "$REPO_ROOT/.env")
   set +a
 fi
+# shellcheck disable=SC2034  # used by the scripts that source this
 PHONE_DIR="/sdcard/Download/drawer-server"
 
 say()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -66,7 +67,7 @@ wait_for() {
 KEY="$HOME/.ssh/drawer_server_ed25519"
 load_phone_env() {
   [ -f "$REPO_ROOT/local/phone.env" ] || die "Run scripts/03-setup-ssh.sh first."
-  # shellcheck disable=SC1091
+  # shellcheck disable=SC1090,SC1091
   source "$REPO_ROOT/local/phone.env"
 }
 
