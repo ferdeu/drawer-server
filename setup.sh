@@ -47,3 +47,4 @@ done
 
 printf '\n\033[1;32mAll done! Your phone is now a server. Next: pick services in docs/services.md\033[0m\n'
 echo "  Photo backup from each family phone:  bash scripts/09-syncthing.sh <name>"
+echo "  Charge between 30 and 80% with a smart plug:  bash scripts/10-smart-plug.sh"

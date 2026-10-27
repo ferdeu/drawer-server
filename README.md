@@ -58,7 +58,7 @@ Using an AI coding agent? Point it at [AGENTS.md](AGENTS.md) and it can drive th
 
 | Phone | Android | Result |
 |---|---|---|
-| Motorola **Moto G24 Power** (XT2425-1, `fogorow`, MediaTek Helio G85, 8 GB RAM) | 14 | ✅ Path A steps 0–9 working |
+| Motorola **Moto G24 Power** (XT2425-1, `fogorow`, MediaTek Helio G85, 8 GB RAM) | 14 | ✅ Path A steps 0–10 working |
 
 Path A uses only standard Android features, so it should work on most phones running **Android 11 or newer**.
 If you try another phone, please open an issue or PR with your results.
@@ -83,7 +83,7 @@ If you try another phone, please open an issue or PR with your results.
 - [x] Step 7: game server for kids (Luanti + Mineclonia, free on Android and Windows)
 - [x] Step 8: status panel (battery, temperature, memory, services, 24 h battery chart)
 - [x] Step 9: photo backup from each family phone with Syncthing (`bash scripts/09-syncthing.sh <name>`, once per phone)
-- [ ] Battery care for an always-plugged phone (smart plug, see docs/devices)
+- [x] Step 10: battery care with a Wi-Fi smart plug that charges between 30 and 80% (`bash scripts/10-smart-plug.sh`)
 - [ ] Services: camera recorder, Jellyfin…
 
 ## Repo layout

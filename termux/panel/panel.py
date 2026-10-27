@@ -71,6 +71,48 @@ def battery_logger():
         time.sleep(LOG_EVERY if b else 30)
 
 
+# --- Smart plug: charge between 30 and 80% ---------------------------------------------------------
+# Android can't stop charging without root, so a Tuya plug feeding the charger does it:
+# off at CHARGE_HIGH, on at CHARGE_LOW. Local network only (tinytuya + the plug's local key,
+# saved by scripts/10-smart-plug.sh). If the battery can't be read for a while, charge: a phone
+# that runs flat is worse than one that sits at 100% for a bit.
+PLUG_CONFIG = HOME / ".config" / "drawer-server" / "plug"
+CHARGE_LOW = int(os.environ.get("CHARGE_LOW", "30"))
+CHARGE_HIGH = int(os.environ.get("CHARGE_HIGH", "80"))
+_plug = None
+
+
+def plug_keeper():
+    global _plug, _battery, _battery_ok_at
+    import tinytuya
+    dev_id, ip, key, version = PLUG_CONFIG.read_text().split()
+    plug = tinytuya.OutletDevice(dev_id, ip, key, version=float(version))
+    plug.set_socketTimeout(5)
+    battery_ok_at = time.time()
+    while True:
+        b = battery()
+        if b:  # fresher than the 5-minute log, so the page shows the cut right away
+            _battery = b
+            battery_ok_at = _battery_ok_at = time.time()
+        try:
+            dps = plug.status().get("dps") or {}
+            if "1" not in dps:
+                raise OSError("no answer")
+            on, p = dps["1"], b.get("percentage")
+            if p is not None and p >= CHARGE_HIGH and on:
+                plug.turn_off()
+                on = False
+            elif not on and ((p is not None and p <= CHARGE_LOW) or time.time() - battery_ok_at > 1800):
+                plug.turn_on()
+                on = True
+            # DP 19 is the power reading in tenths of a watt on Tuya metering plugs
+            _plug = {"on": on, "watts": dps["19"] / 10 if isinstance(dps.get("19"), int) else None,
+                     "low": CHARGE_LOW, "high": CHARGE_HIGH}
+        except Exception as e:  # unplugged, Wi-Fi hiccup...: try again next round
+            _plug = {"error": str(e)[:80]}
+        time.sleep(60)
+
+
 def memory():
     info = {}
     for line in Path("/proc/meminfo").read_text().splitlines():
@@ -354,7 +396,7 @@ def status():
     # Android sometimes puts Termux:API to sleep; then battery readings silently stop
     battery_stale = time.time() - _battery_ok_at > 600
     return {"battery": {} if battery_stale else _battery, "battery_stale": battery_stale, "memory": memory(), "disk": disk(), "uptime_h": uptime_hours(),
-            "services": services, "history": history, "home": _home, "time": int(time.time())}
+            "services": services, "history": history, "home": _home, "plug": _plug, "time": int(time.time())}
 
 
 TEXT = {
@@ -364,6 +406,8 @@ TEXT = {
            "charging": "charging", "not_charging": "on battery", "updated": "updated",
            "unplug": "🔌 Battery at {p}%: unplug the charger (keeping it between 30 and 80% makes it last longer)",
            "plug": "🔌 Battery at {p}%: plug the charger in (unplug it at 80%)",
+           "plug_on": "smart plug on", "plug_off": "smart plug off until {low}%",
+           "plug_error": "⚠️ Can't reach the smart plug ({e}). Is it on and on the Wi-Fi?",
            "starlink": "Starlink", "latency": "latency", "obstructed": "obstructed", "dish_up": "dish on for",
            "printer": "Printer ink", "people": "Who's home", "home": "home", "away": "away",
            "api_asleep": "⚠️ Can't read the battery: Android put Termux:API to sleep. Run scripts/restart-server.sh with the phone plugged into the computer.",
@@ -380,6 +424,8 @@ TEXT = {
            "charging": "cargando", "not_charging": "a batería", "updated": "actualizado",
            "unplug": "🔌 Batería al {p}%: desenchufá el cargador (entre 30 y 80% dura muchos más años)",
            "plug": "🔌 Batería al {p}%: enchufá el cargador (y sacalo al 80%)",
+           "plug_on": "enchufe prendido", "plug_off": "enchufe apagado hasta el {low}%",
+           "plug_error": "⚠️ No puedo hablar con el enchufe ({e}). ¿Está prendido y en el WiFi?",
            "starlink": "Starlink", "latency": "latencia", "obstructed": "obstruido", "dish_up": "antena prendida hace",
            "printer": "Tinta de la impresora", "people": "¿Quién está en casa?", "home": "en casa", "away": "afuera",
            "api_asleep": "⚠️ No puedo leer la batería: Android durmió a Termux:API. Corré scripts/restart-server.sh con el celu enchufado a la compu.",
@@ -454,7 +500,9 @@ async function refresh() {
     const s = await (await fetch('/api/status')).json();
     const b = s.battery || {};
     $('bat').textContent = b.percentage != null ? b.percentage + '%' : '–';
-    $('plug').textContent = b.plugged && b.plugged !== 'UNPLUGGED' ? '⚡ ' + T.charging : T.not_charging;
+    const sp = s.plug;
+    $('plug').textContent = (b.plugged && b.plugged !== 'UNPLUGGED' ? '⚡ ' + T.charging : T.not_charging) +
+      (sp && !sp.error ? ' · ' + (sp.on ? T.plug_on + (sp.watts != null ? ' ' + sp.watts + ' W' : '') : T.plug_off.replace('{low}', sp.low)) : '');
     const t = b.temperature;
     $('temp').textContent = t != null ? t.toFixed(1) + '°C' : '–';
     $('temp').style.color = t == null ? '' : t >= 40 ? 'var(--bad)' : t >= 35 ? 'var(--warn)' : '';
@@ -468,9 +516,11 @@ async function refresh() {
       return `<div class="svc"><span><span class="dot" style="background:${color(v.ok)}"></span>${v.name}</span><span class="sub">${detail}</span></div>`;
     }).join('');
     drawChart(s.history);
-    // charge-cycling reminder until a smart plug does it automatically
+    // charge-cycling reminder, unless a smart plug does it automatically
     const p = b.percentage, plugged = b.plugged && b.plugged !== 'UNPLUGGED';
     $('alert').textContent = s.battery_stale ? T.api_asleep
+                           : sp && sp.error ? T.plug_error.replace('{e}', sp.error)
+                           : sp ? ''
                            : p == null ? '' : plugged && p >= 80 ? T.unplug.replace('{p}', p)
                            : !plugged && p <= 30 ? T.plug.replace('{p}', p) : '';
     drawHome(s.home || {});
@@ -571,4 +621,6 @@ if __name__ == "__main__":
     # the first battery read can take a while; serve the page meanwhile
     threading.Thread(target=battery_logger, daemon=True).start()
     start_home_readers()
+    if PLUG_CONFIG.exists():
+        threading.Thread(target=plug_keeper, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

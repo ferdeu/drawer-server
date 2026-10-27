@@ -11,7 +11,7 @@
 
 ## Path A
 
-✅ Works (steps 0–9 tested). Nothing device-specific was needed.
+✅ Works (steps 0–10 tested). Nothing device-specific was needed.
 
 ## Path B (unlock + custom ROM): not done, notes only
 
@@ -36,7 +36,8 @@ channel so you can restore it.
 
 Being plugged in 24/7 at 100% can swell a lithium battery over time. Without root you can't cap
 charging from software, and **this model has no built-in charge limit** (checked Settings > Battery
-and the hidden settings on Android 14: only Battery saver and Battery manager). Plan: a Wi-Fi smart
-plug (Tuya / Smart Life) that the phone switches off at 80% and on at 30%
-(the status panel already reminds you to do it by hand at those levels).
+and the hidden settings on Android 14: only Battery saver and Battery manager). Step 10 solves it
+with a Wi-Fi smart plug (Tuya / Smart Life) that the phone switches off at 80% and on at 30%
+(tested with a metering plug, protocol 3.5). Without a plug, the status panel reminds you to do it
+by hand at those levels.
 Keep the phone somewhere cool and out of its case, and check it now and then for bulging.

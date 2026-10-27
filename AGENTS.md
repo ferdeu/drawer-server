@@ -21,9 +21,10 @@ You are helping someone turn an old Android phone into a home server with this r
 - Step 2: warn the human **before** running it that Google Play Protect will show "Blocked unsafe app"
   three times and they must tap the small **"Install anyway"** text, not "Got it".
 - Step 3: tell the human to unlock the phone and leave it on Termux; the script types into it.
-- Steps 6–9 are optional and run over Wi-Fi (no cable needed). Step 6 skips itself without
-  `NEXTDNS_LINK_URL` in `.env`. Step 9 is not in `setup.sh`: run `bash scripts/09-syncthing.sh <name>`
-  once per family phone, with that phone at hand, and relay the on-screen instructions.
+- Steps 6–10 are optional and run over Wi-Fi (no cable needed). Step 6 skips itself without
+  `NEXTDNS_LINK_URL` in `.env`. Steps 9 and 10 are not in `setup.sh`. Run `bash scripts/09-syncthing.sh <name>`
+  once per family phone, with that phone at hand, and relay the on-screen instructions. Step 10 (smart
+  plug) needs the human to pair the plug and create a Tuya cloud project first; its header lists how.
 - If a step fails, stop. Show the error, explain it simply, propose options. Don't skip ahead.
 - Explain things in plain words; people doing this may be beginners or kids.
 - `local/` holds per-phone data (IPs, Termux user). It's gitignored. Never commit it.

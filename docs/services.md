@@ -62,6 +62,12 @@ Set in `.env`, then re-run `scripts/08-panel.sh`:
 The panel also shows a 📷 **Photo backup** card by itself once step 9 is set up: each phone's
 folder, whether that phone is connected, how much is left and the download speed.
 
+After step 10 the 🔋 card shows the smart plug too (on with its watts, or "off until 30%"). The panel
+itself does the switching: it checks every minute, cuts the charger at 80% and turns it back on at
+30% (`CHARGE_LOW` / `CHARGE_HIGH` to change them). If the battery can't be read for 30 minutes it
+turns the charger on, and the plug is set to come back on after a power cut, so a glitch ends with
+a full battery, never a flat one. It talks to the plug over the home network only.
+
 ## Photo backup notes (from the test)
 
 - Run `bash scripts/09-syncthing.sh <name>` once per person, with their phone at hand. It shows a QR
