@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Step 10 (optional) - A Wi-Fi smart plug (Tuya / Smart Life) that cycles the charger:
-# off at 80%, back on at 30%. Without root Android can't stop charging by itself, and a phone
+# off at 80%, back on at 30% (CHARGE_HIGH / CHARGE_LOW in .env, then re-run step 8). Without root Android can't stop charging by itself, and a phone
 # kept at 100% all day wears its battery out (it can even swell).
 #
 # Before running it:

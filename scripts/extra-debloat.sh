@@ -53,7 +53,11 @@ adb shell pm list packages -3 > "$REPO_ROOT/local/pkgs-user-before.txt"
 adb shell pm list packages -s > "$REPO_ROOT/local/pkgs-system-before.txt"
 
 if [ "${1:-}" = "--user-apps" ]; then
-  warn "Uninstalling EVERY app you installed except Termux and Tailscale. Their data will be lost."
+  warn "This uninstalls EVERY app you installed except Termux and Tailscale. Their data will be lost, no undo."
+  # a person has to type it: never run this from a pipe, a script or an agent
+  [ -t 0 ] || die "--user-apps needs a person at the keyboard to confirm. Nothing was removed."
+  read -r -p "  Type ERASE to go on, anything else to cancel: " answer
+  [ "$answer" = ERASE ] || die "Cancelled. Nothing was removed."
   for p in $(adb shell pm list packages -3 | tr -d '\r' | sed 's/package://' | grep -vE "$KEEP_USER_APPS"); do
     printf '  %-50s %s\n' "$p" "$(adb shell pm uninstall "$p" | tr -d '\r')"
   done

@@ -6,3 +6,5 @@ apks/
 local/
 # personal progress log
 PROGRESO.md
+# Python bytecode from syntax checks
+__pycache__/

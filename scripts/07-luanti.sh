@@ -9,14 +9,19 @@
 # Luanti isn't packaged for Termux, so it runs inside a small Debian (proot-distro):
 # Android > Termux > Debian > luantiserver.
 #
-#   bash scripts/07-luanti.sh                install + start (safe to re-run)
-#   LUANTI_ADMIN=Ana bash scripts/07-luanti.sh   that player name gets all privileges
+#   Put LUANTI_ADMIN=<player name> in .env, then:  bash scripts/07-luanti.sh   (safe to re-run)
+#   That player gets all privileges. Without it the step skips itself.
 source "$(dirname "$0")/lib.sh"
 
 load_phone_env
 HOST="${PHONE_LAN_IP:?run scripts/04-network.sh first}"
-ADMIN="${LUANTI_ADMIN:-admin}"
-[ -n "${LUANTI_ADMIN:-}" ] || warn "No LUANTI_ADMIN in .env: the admin is the player named 'admin'. Join with that name first, or someone else can claim it."
+if [ -z "${LUANTI_ADMIN:-}" ]; then
+  warn "Skipped: no LUANTI_ADMIN in .env (the player name that will be the game's admin). Optional step."
+  exit 0
+fi
+ADMIN="$LUANTI_ADMIN"
+case "$ADMIN" in *[!A-Za-z0-9_-]*) die "LUANTI_ADMIN: use letters, numbers, - or _ (that's what Luanti allows): $ADMIN" ;; esac
+[ "${#ADMIN}" -le 20 ] || die "LUANTI_ADMIN: Luanti names are 20 characters at most: $ADMIN"
 PORT="${LUANTI_PORT:-30000}"
 
 say "Finding the latest Mineclonia release"

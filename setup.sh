@@ -16,7 +16,7 @@ STEPS=(
   "scripts/04-network.sh|Test Wi-Fi access and show what to reserve in the router"
   "scripts/05-tailscale.sh|Tailscale, to reach the phone from outside home"
   "scripts/06-nextdns.sh|Ad blocking for the whole home with NextDNS (optional)"
-  "scripts/07-luanti.sh|Game server for the kids: Luanti + Mineclonia"
+  "scripts/07-luanti.sh|Game server for the kids: Luanti + Mineclonia (optional)"
   "scripts/08-panel.sh|Status panel web page"
 )
 
@@ -48,3 +48,4 @@ done
 printf '\n\033[1;32mAll done! Your phone is now a server. Next: pick services in docs/services.md\033[0m\n'
 echo "  Photo backup from each family phone:  bash scripts/09-syncthing.sh <name>"
 echo "  Charge between 30 and 80% with a smart plug:  bash scripts/10-smart-plug.sh"
+echo "  Security cameras in the panel (home only):  bash scripts/11-cameras.sh"

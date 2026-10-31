@@ -16,8 +16,9 @@ Leave ~1 GB for Android itself, so plan with **~4–4.5 GB** for services.
 | **Luanti + Mineclonia** (free Minecraft-like game) | a world for the kids; free clients on Android and Windows | **270–320 MB** | low; lag spike only while a new player downloads the textures | ⭐⭐ medium | ✅ `scripts/07-luanti.sh` |
 | **Minecraft Java server** (Paper 26.2, Java 25) | a world for the kids | **1.3 GB** idle, plan 2 GB with players | **~33% of one core** idle (of 8 cores) | ⭐⭐ medium | 🧪 measured, script pending |
 | **Syncthing** | automatic photo/file backup between phones and computers | **29 MB** idle | ~0 idle, bursts while syncing | ⭐⭐ medium | ✅ `scripts/09-syncthing.sh <name>` |
-| **Status panel** (small Python web page) | battery, temperature, RAM, disk, services, 24 h battery chart, charge reminder; photo backup progress; optional Starlink dish stats, Epson ink levels and who's home | **~25 MB** | ~0 | ⭐ easy | ✅ `scripts/08-panel.sh` → `http://<phone-ip>:8080` |
-| **Camera recorder** (ffmpeg, RTSP) | record Wi-Fi cameras 24/7 or by schedule | est. 30–60 MB per camera | low (copies the video, doesn't re-encode) | ⭐⭐ medium | ⏳ needs the cameras' RTSP password |
+| **Status panel** (small Python web page) | battery, temperature, RAM, disk, services, 24 h battery chart, charge reminder; photo backup progress; optional Starlink dish stats, Epson ink levels and who's home | **~25 MB** | ~0 | ⭐ easy | ✅ `scripts/08-panel.sh` → `http://<phone-ip>:8080`, see [panel.md](panel.md) |
+| **Cameras in the panel** (go2rtc + ffmpeg) | at home: a still of each camera every ~2.5 s, tap for live video | go2rtc ~20 MB | stills: ~14% of one core for 3 cameras, only while someone looks; live video is passed through, not re-encoded | ⭐⭐ medium | ✅ `scripts/11-cameras.sh` |
+| **Camera recorder** (ffmpeg, RTSP) | record Wi-Fi cameras 24/7 or by schedule | est. 30–60 MB per camera | low (copies the video, doesn't re-encode) | ⭐⭐ medium | 💡 idea; go2rtc from step 11 can feed it |
 | **Jellyfin** ("home Netflix") | movies and shows on the TV/Chromecast | est. 300–500 MB (runs inside a Debian container, `proot-distro`) | fine if the TV plays the file as-is; re-encoding video is too heavy for a phone CPU | ⭐⭐⭐ hard | ⏳ not measured |
 | **Uptime monitor** (e.g. Uptime Kuma) | logs when the internet goes down | est. 80–120 MB | low | ⭐⭐ medium | 💡 idea |
 | **Bots / scripts 24/7** (Python, Node) | Telegram bot, alerts, automations | 20–80 MB each | depends | ⭐–⭐⭐ | 💡 idea |
@@ -48,25 +49,9 @@ both want the CPU. Storage is the other limit: video recording fills disks fast
 (a 1080p camera stream is roughly 15–40 GB per day), so recorder setups need a retention limit
 or the cameras' lower-resolution sub-stream.
 
-## Panel home cards
+## Status panel
 
-Set in `.env`, then re-run `scripts/08-panel.sh`:
-
-| Card | Setting | How it works |
-|---|---|---|
-| 🛰️ Starlink | `PANEL_STARLINK=yes` | the dish's local gRPC API at `192.168.100.1:9200` (`grpcurl`), no account needed |
-| 🖨️ Epson ink | `PANEL_PRINTER_IP=…` | Epson's own SNMP status query (`@BDC ST2`), works on old models like the XP-211 that don't fill the standard printer-supplies table |
-| 🏠 Who's home | `PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"` | pings each phone every 2 min; "home" if it answered in the last 20 min (sleeping phones skip pings). Give those phones fixed IPs in the router. |
-| 📶 Wi-Fi devices | `PANEL_ROUTER=tplink` (+ `ROUTER_URL`, `ROUTER_PASSWORD`); optional `PANEL_DEVICE_NAMES="MAC=Name,…"` | asks a TP-Link router (web API, [tplinkrouterc6u](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)) every 5 min for everything connected: cameras, computers, phones, grouped, with cable/2.4/5 GHz and signal. Devices that leave show as offline for a month, and one that joins the Wi-Fi but never gets an address is flagged (a common reason cameras "go offline"). TP-Link allows one admin at a time, so each check logs out a browser open on the router page. |
-
-The panel also shows a 📷 **Photo backup** card by itself once step 9 is set up: each phone's
-folder, whether that phone is connected, how much is left and the download speed.
-
-After step 10 the 🔋 card shows the smart plug too (on with its watts, or "off until 30%"). The panel
-itself does the switching: it checks every minute, cuts the charger at 80% and turns it back on at
-30% (`CHARGE_LOW` / `CHARGE_HIGH` to change them). If the battery can't be read for 30 minutes it
-turns the charger on, and the plug is set to come back on after a power cut, so a glitch ends with
-a full battery, never a flat one. It talks to the plug over the home network only.
+What it shows, which cards you can add and how to set them up: [panel.md](panel.md).
 
 ## Photo backup notes (from the test)
 

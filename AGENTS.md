@@ -21,10 +21,12 @@ You are helping someone turn an old Android phone into a home server with this r
 - Step 2: warn the human **before** running it that Google Play Protect will show "Blocked unsafe app"
   three times and they must tap the small **"Install anyway"** text, not "Got it".
 - Step 3: tell the human to unlock the phone and leave it on Termux; the script types into it.
-- Steps 6–10 are optional and run over Wi-Fi (no cable needed). Step 6 skips itself without
-  `NEXTDNS_LINK_URL` in `.env`. Steps 9 and 10 are not in `setup.sh`. Run `bash scripts/09-syncthing.sh <name>`
+- Steps 6–11 are optional and run over Wi-Fi (no cable needed). Step 6 skips itself without
+  `NEXTDNS_LINK_URL` in `.env`, step 7 without `LUANTI_ADMIN`: ask the human before step 6 whether they
+  want them. Steps 9, 10 and 11 are not in `setup.sh`. Run `bash scripts/09-syncthing.sh <name>`
   once per family phone, with that phone at hand, and relay the on-screen instructions. Step 10 (smart
   plug) needs the human to pair the plug and create a Tuya cloud project first; its header lists how.
+  Step 11 (cameras) needs `PANEL_CAMERAS` in `.env` (cameras with RTSP and fixed IPs) and skips itself without it.
 - If a step fails, stop. Show the error, explain it simply, propose options. Don't skip ahead.
 - Explain things in plain words; people doing this may be beginners or kids.
 - `local/` holds per-phone data (IPs, Termux user). It's gitignored. Never commit it.
@@ -36,8 +38,10 @@ The human may name things loosely ("the panel", "the plug", "photos", "the game"
 | Topic | Files |
 |---|---|
 | Status panel web page and its cards | `termux/panel/panel.py`, deployed by `scripts/08-panel.sh`, cards set by `PANEL_*` in `.env` |
+| What the router knows about each device, naming devices | `scripts/router-devices.sh` (read-only; detail in `local/router-devices.json`), names go in `PANEL_DEVICE_NAMES` |
 | Charging between 30 and 80% (smart plug) | `scripts/10-smart-plug.sh`, `termux/plug-setup.py`; the cycling itself runs inside the panel |
 | Photo backup from family phones | `scripts/09-syncthing.sh` |
+| Security cameras in the panel (stills, live view) | `scripts/11-cameras.sh` (go2rtc), `termux/panel/cameras.py`; tests: `bash tests/run-on-phone.sh` |
 | Game server for the kids | `scripts/07-luanti.sh` |
 | Ad blocking | `scripts/06-nextdns.sh` |
 | Access from outside home | `scripts/05-tailscale.sh` |
@@ -45,7 +49,7 @@ The human may name things loosely ("the panel", "the plug", "photos", "the game"
 | What runs when the phone boots | `termux/bootstrap.sh` |
 | Server down, SSH "Connection refused" | `scripts/restart-server.sh` (needs the cable) |
 | Shared helpers (`say`, `wait_for`, `phone_ssh`) | `scripts/lib.sh` |
-| Docs for humans | `README.md`, `docs/path-a.md`, `docs/services.md`, `docs/concepts.md` |
+| Docs for humans | `README.md`, `docs/path-a.md`, `docs/panel.md`, `docs/services.md`, `docs/concepts.md` |
 
 ## Checking your work (Claude Code)
 

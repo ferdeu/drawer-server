@@ -100,6 +100,11 @@ ST='syncthing cli config folders'
   echo "  backing up: $LABEL -> Backups/$WHO/$LABEL"
 done
 
+if phone_ssh "$HOST" 'test -f ~/panel/panel.py'; then
+  say "Restarting the panel, so it shows the photo backup"
+  bash "$REPO_ROOT/scripts/08-panel.sh" >/dev/null
+fi
+
 say "Syncthing ready"
 echo "  Photos go to the server's storage: Backups/$WHO (deleting on the phone doesn't delete them here)"
 echo "  Control page:  http://$HOST:8384   user: admin   password: SYNCTHING_GUI_PASSWORD in .env"

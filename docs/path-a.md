@@ -1,6 +1,6 @@
 # Path A: server on stock Android (nothing erased)
 
-`bash setup.sh` runs all of this for you. This page explains what each step does, so you know what's
+`bash setup.sh` runs steps 0–8 for you; steps 9 to 11 are separate commands. This page explains what each step does, so you know what's
 happening and can fix it if something goes wrong.
 
 **Why "Path A"?** There are two ways to turn a phone into a server:
@@ -128,6 +128,106 @@ permission. Then install Tailscale on your computer or other phone with the same
 
 The script also sets Tailscale as the **always-on VPN**, so it reconnects after a reboot. The phone needs a Google account signed in to install from the Play Store.
 
+**After step 5 the server is done.** Steps 6–11 add things to do with it. They work over Wi-Fi, so
+you can unplug the cable, and each one is optional. They read their settings from `.env`
+(copy `.env.example` to `.env`; each section there says which step uses it).
+
+---
+
+## Step 6: ad blocking for the whole home (optional)
+
+`scripts/06-nextdns.sh`, needs `NEXTDNS_LINK_URL` in `.env` (skips itself without it)
+
+Blocks ads and trackers on every device at home, including TVs and the kids' tablets.
+The blocking runs in [NextDNS](https://nextdns.io)'s cloud, because without root Android won't let
+the phone answer DNS on port 53, the only port home routers use for it. What the phone does is keep
+NextDNS up to date with your home's public IP, which changes often on Starlink and other CGNAT
+connections.
+
+1. Create a free account at my.nextdns.io. In **Setup → Linked IP → Show advanced options**, copy the
+   URL that looks like `https://link-ip.nextdns.io/…/…` into `.env` as `NEXTDNS_LINK_URL`.
+2. Run the script.
+3. In your router's DHCP settings, set primary DNS `45.90.28.40` and secondary `45.90.30.40`
+   (the script prints them too).
+
+The free plan covers 300,000 queries a month. A busy home can go over that; NextDNS's dashboard shows
+how much you use. To undo, remove those two DNS servers from the router.
+
+## Step 7: game server for the kids (optional)
+
+`scripts/07-luanti.sh`, needs `LUANTI_ADMIN` in `.env` (skips itself without it)
+
+[Luanti](https://www.luanti.org) with the Mineclonia game: free, open source and plays like
+Minecraft. It runs inside a small Debian on the phone and uses ~300 MB of RAM. Put the player name
+that will be the game's admin in `.env` as `LUANTI_ADMIN` (yours or a kid's). The first run takes a
+few minutes. Players install Luanti (free on Android, Windows, macOS and Linux), pick **Join Game**
+and type the server's IP and port `30000`. Details in [services.md](services.md#luanti-notes-from-the-test).
+
+## Step 8: status panel
+
+`scripts/08-panel.sh`, optional `PANEL_*` settings in `.env`
+
+A web page with the server's health and, if you want, your home's: internet, who's home, devices
+on the Wi-Fi, printer ink. Open `http://<server-ip>:8080`. How to set up each card: [panel.md](panel.md).
+
+## Step 9: photo backup from the family's phones (optional)
+
+`bash scripts/09-syncthing.sh <name>`, once per person, with their phone at hand. Use the same name
+as in the panel's `PANEL_PEOPLE` (same capitals; letters, numbers, - or _) so the backup shows under that person.
+
+Each family phone sends its camera folder to the server over the home Wi-Fi with
+[Syncthing](https://syncthing.net). The server keeps every photo, even after it's deleted on the phone.
+
+**Before the first run,** give Termux access to the phone's storage: open Termux on the server,
+type `termux-setup-storage`, press Enter and tap **Allow**.
+
+The script shows a QR code. On the *family* phone, install **Syncthing-Fork** (Play Store or F-Droid),
+scan the code and share the camera folder as **Send Only**. Photos land in `Backups/<name>/` on the
+server. More in [services.md](services.md#photo-backup-notes-from-the-test).
+
+## Step 10: charge between 30 and 80% with a smart plug (optional)
+
+`scripts/10-smart-plug.sh`, needs `TUYA_*` in `.env`
+
+A phone plugged in at 100% all day wears its battery out, and without root Android can't stop
+charging by itself. A cheap Wi-Fi plug that works with the **Smart Life** app (Tuya) can: the
+panel turns it off at 80% and back on at 30%.
+
+You need, once: the plug paired in Smart Life with the phone's charger plugged into it, and a free
+developer project at iot.tuya.com to get the plug's local key. The top of the script lists every
+click. After that the phone talks to the plug over the home network only, so give the plug a
+fixed IP in the router (like the server in step 4). The window can be changed with `CHARGE_LOW` and
+`CHARGE_HIGH` in `.env`, then re-running step 8.
+
+## Step 11: security cameras in the panel (optional)
+
+`scripts/11-cameras.sh`, needs `PANEL_CAMERAS` in `.env`
+
+At home, the panel shows a still of each camera that refreshes every ~2.5 s; tap one for live
+video, with ◀ ▶ to change camera and pinch to zoom. No cloud, no vendor app. Away from home the
+card says "home only": keep using the camera's own app there.
+
+You need cameras that speak RTSP (tested: Ezviz H8c; Hikvision works the same), each with a fixed
+IP in the router. In `.env`: `PANEL_CAMERAS="Front=192.168.1.50:ABCDEF,Back=192.168.1.52:GHIJKL"`;
+for Ezviz the code is the verification code on the camera's sticker. The step installs
+[go2rtc](https://github.com/AlexxIT/go2rtc) (pinned version, checksum checked), which connects to
+each camera once and only listens on the phone itself.
+
+At home, open the panel by its Wi-Fi address (`http://<phone-ip>:8080`), not the Tailscale one, or
+the cameras show as "home only". There's no login: anyone on the home Wi-Fi can open the panel and
+watch, so give visitors the router's guest network. The video is H.265: phones, tablets and Chrome
+on computers usually play it, some browsers don't. A screen too weak for the big stream drops to
+the small one by itself.
+
+## Optional: free some RAM
+
+`scripts/extra-debloat.sh` (undo with `--revert`)
+
+Hides preinstalled apps the server doesn't need (Facebook services, games, Chrome…). On the test
+phone this freed ~0.8 GB of RAM, and `--revert` brings it all back. Run it without options:
+the script also has a `--user-apps` option that **erases** the apps you installed and their data,
+can't be undone, and is not part of Path A.
+
 ---
 
 ## If the server stops ("Connection refused")
@@ -160,6 +260,9 @@ screen off, and a screen that's always on heats the phone, which is bad for the 
 
 ## Undoing everything
 
+If you set up the smart plug (step 10), first turn it on in the Smart Life app, or plug the
+charger straight into the wall: once Termux is gone, nothing turns the plug back on.
+
 ```bash
 bash scripts/01-server-settings.sh --revert       # Android's background-killing settings
 bash scripts/extra-debloat.sh --revert            # only if you ran it: brings back preinstalled apps
@@ -167,7 +270,7 @@ adb shell settings delete secure always_on_vpn_app
 adb uninstall com.termux.boot && adb uninstall com.termux.api && adb uninstall com.termux
 ```
 
-Uninstalling Termux deletes everything inside it (the services from steps 6–9, the game world, the
+Uninstalling Termux deletes everything inside it (the services from steps 6–11, the game world, the
 panel's history) but **not** the photo backups, which live in the phone's storage under `Backups/`.
 Then remove the router reservation, the NextDNS DNS servers from the router if you set them, and
 Tailscale if you want.
