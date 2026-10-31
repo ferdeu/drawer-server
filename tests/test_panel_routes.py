@@ -2,6 +2,7 @@
 import json
 import socket
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -218,6 +219,90 @@ class RoutesTest(unittest.TestCase):
         panel.is_home = lambda ip: False
         self.assertEqual(self.fetch("/live/ws?src=cam1")[0], 403)
         self.assertEqual(self.fetch("/live/video-rtc.js")[0], 403)
+
+    def post(self, path, origin=None):
+        headers = {"Origin": origin} if origin else {}
+        try:
+            with urllib.request.urlopen(urllib.request.Request(self.base + path, data=b"", headers=headers), timeout=10) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def speed_setup(self, per_day=4):
+        saved = panel.speed_per_day, panel.speedtest, panel.SPEED_LOG, panel.SPEED_TRIES
+        self.addCleanup(lambda: setattr(panel, "speed_per_day", saved[0]) or setattr(panel, "speedtest", saved[1])
+                        or setattr(panel, "SPEED_LOG", saved[2]) or setattr(panel, "SPEED_TRIES", saved[3]))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        panel.SPEED_LOG = Path(tmp.name) / "speed.csv"
+        panel.SPEED_TRIES = Path(tmp.name) / "speed-tries"
+        panel.speed_per_day = lambda: per_day
+        panel.speedtest = lambda: [int(time.time()), 55.5, 15.5, 32, "Moreno, AR"]
+
+    def test_speedtest_button(self):
+        self.speed_setup()
+        self.assertEqual(self.post("/api/speedtest", origin=self.base), 202)
+        for _ in range(50):
+            if not panel._speed["running"]:
+                break
+            time.sleep(0.05)
+        speed = json.loads(self.fetch("/api/status")[1])["speed"]
+        self.assertEqual(speed["last"][1:], [55.5, 15.5, 32, "Moreno, AR"])  # a comma in the name survives the CSV
+        self.assertEqual((speed["per_day"], len(speed["day"]), speed["error"]), (4, 1, None))
+        # each test moves ~100 MB: a second tap right away is turned down
+        self.assertEqual(self.post("/api/speedtest", origin=self.base), 429)
+
+    def test_speedtest_other_website(self):
+        self.speed_setup()
+        self.assertEqual(self.post("/api/speedtest", origin="http://ads.example.com"), 403)
+        self.assertFalse(panel.SPEED_LOG.exists())
+
+    def test_speedtest_off(self):
+        self.speed_setup(per_day=None)
+        self.assertEqual(self.post("/api/speedtest", origin=self.base), 404)
+        self.assertIsNone(json.loads(self.fetch("/api/status")[1])["speed"])
+
+    def test_speedtest_failure_shows(self):
+        self.speed_setup()
+        def broken():
+            raise ValueError("no servers")
+        panel.speedtest = broken
+        self.assertEqual(self.post("/api/speedtest", origin=self.base), 202)
+        for _ in range(50):
+            if not panel._speed["running"]:
+                break
+            time.sleep(0.05)
+        speed = json.loads(self.fetch("/api/status")[1])["speed"]
+        self.assertEqual((speed["error"], speed["last"]), ("no servers", None))
+        # a failed test counts: it doesn't run again right away (it may have moved its 100 MB)
+        self.assertEqual(self.post("/api/speedtest", origin=self.base), 429)
+        self.assertGreater(speed["next_ok"], time.time())
+        panel._speed["error"] = None
+
+    def test_speedtest_day_cap(self):
+        self.speed_setup()
+        hour_ago = int(time.time()) - 3600
+        # a full day's tests in the last hours, oldest first
+        panel.SPEED_TRIES.write_text("".join(f"{hour_ago - i * 600}\n" for i in reversed(range(panel.SPEED_DAY_CAP))))
+        self.assertEqual(self.post("/api/speedtest", origin=self.base), 429)
+        # yesterday's tries don't count
+        panel.SPEED_TRIES.write_text("".join(f"{hour_ago - 86400 - i}\n" for i in range(panel.SPEED_DAY_CAP)))
+        self.assertEqual(self.post("/api/speedtest", origin=self.base), 202)
+        for _ in range(50):
+            if not panel._speed["running"]:
+                break
+            time.sleep(0.05)
+
+    def test_speed_per_day_setting(self):
+        saved = panel.CONFIG, panel.shutil.which
+        self.addCleanup(lambda: setattr(panel, "CONFIG", saved[0]) or setattr(panel.shutil, "which", saved[1]))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        panel.CONFIG, panel.shutil.which = Path(tmp.name), lambda name: "/bin/" + name
+        self.assertIsNone(panel.speed_per_day())  # no setting: no speed test at all
+        for text, want in (("4", 4), ("0", 0), ("9", 6), ("-1", 0), ("abc", 0), ("", 0)):
+            (panel.CONFIG / "speedtest").write_text(text + "\n")
+            self.assertEqual(panel.speed_per_day(), want, text)
 
     def test_player_script(self):
         code, body, headers = self.fetch("/live/video-rtc.js")

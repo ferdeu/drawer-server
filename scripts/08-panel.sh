@@ -30,12 +30,18 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #   PANEL_ROUTER=tplink                     every device on the Wi-Fi, from a TP-Link router's web API
 #                                           (uses ROUTER_URL and ROUTER_PASSWORD)
 #   PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Doorbell,..."   names for devices that don't report one
+#   PANEL_DEVICE_HIDE="F4-70-18-00-00-03,..."   devices to leave out, e.g. a camera's Wi-Fi turned off on purpose
+#   PANEL_SPEEDTEST=4                       speed tests a day, 0-6 (0: only the "Test now" button);
+#                                           each one moves ~100 MB
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
 
 [[ "${PANEL_PRINTER_IP:-}" =~ ^([0-9.]+)?$ ]] || die "PANEL_PRINTER_IP should be an address like 192.168.1.40"
+[[ "${PANEL_SPEEDTEST:-}" =~ ^[0-6]?$ ]] || die "PANEL_SPEEDTEST should be how many speed tests a day, 0 to 6"
+[[ "${PANEL_DEVICE_HIDE:-}" =~ ^([0-9A-Fa-f:-]{17}( *, *[0-9A-Fa-f:-]{17})*)?$ ]] ||
+  die "PANEL_DEVICE_HIDE should be MACs separated by commas, like F4-70-18-00-00-03,F4-70-18-00-00-04"
 
 # the router password, names and title go over stdin, never inside a command line
-phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names ~/.config/drawer-server/title ~/.config/drawer-server/people'
+phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names ~/.config/drawer-server/device-hide ~/.config/drawer-server/title ~/.config/drawer-server/people'
 if [ -n "${PANEL_TITLE:-}" ]; then
   printf '%s\n' "$PANEL_TITLE" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/title'
 fi
@@ -51,6 +57,10 @@ if [ "${PANEL_ROUTER:-}" = tplink ]; then
     tr ',' '\n' <<<"$PANEL_DEVICE_NAMES" | sed -n 's/^ *\([0-9A-Fa-f:-]\{17\}\) *= *\(.*[^ ]\) *$/\1 \2/p' |
       phone_ssh "$HOST" 'cat > ~/.config/drawer-server/device-names'
   fi
+  if [ -n "${PANEL_DEVICE_HIDE:-}" ]; then
+    tr ',' '\n' <<<"$PANEL_DEVICE_HIDE" | grep -oE '[0-9A-Fa-f:-]{17}' |
+      phone_ssh "$HOST" 'cat > ~/.config/drawer-server/device-hide'
+  fi
 fi
 
 say "Installing tools and starting the panel (starts on boot too)"
@@ -59,9 +69,14 @@ command -v python >/dev/null || pkg install -y python >/dev/null 2>&1
 command -v grpcurl >/dev/null || pkg install -y grpcurl >/dev/null 2>&1
 command -v snmpget >/dev/null || pkg install -y net-snmp >/dev/null 2>&1
 C=~/.config/drawer-server
-rm -f \$C/starlink \$C/printer
+rm -f \$C/starlink \$C/printer \$C/speedtest
 [ '${PANEL_STARLINK:-}' = yes ] && touch \$C/starlink
 [ -n '${PANEL_PRINTER_IP:-}' ] && echo '${PANEL_PRINTER_IP:-}' > \$C/printer
+if [ -n '${PANEL_SPEEDTEST:-}' ]; then
+  command -v speedtest-go >/dev/null || pkg install -y speedtest-go >/dev/null 2>&1
+  command -v speedtest-go >/dev/null || echo 'WARNING: could not install speedtest-go; no speed test card'
+  echo '${PANEL_SPEEDTEST:-}' > \$C/speedtest
+fi
 true
 cat > ~/.termux/boot/40-panel.sh <<'EOF'
 #!/data/data/com.termux/files/usr/bin/sh

@@ -46,7 +46,7 @@ setting can be undone ([how](docs/path-a.md#undoing-everything)).
 | Photo backup (9) | the family's phones, one at a time |
 | Battery saver (10) | a Wi-Fi smart plug that works with the **Smart Life** app (Tuya), and a free iot.tuya.com account |
 | Cameras (11) | cameras with RTSP (tested: Ezviz H8c), each with a fixed IP in the router |
-| Panel cards | whatever you have: Starlink, a TP-Link router, an Epson printer ([details](docs/panel.md)) |
+| Panel cards | whatever you have: Starlink, a TP-Link router, an Epson printer; a speed test needs nothing ([details](docs/panel.md)) |
 
 ## Quick start
 

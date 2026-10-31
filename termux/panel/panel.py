@@ -225,6 +225,122 @@ def starlink():
     }
 
 
+SPEED_LOG = DATA / "speed.csv"
+SPEED_TRIES = DATA / "speed-tries"  # when each test started, failed ones too; kept for a day
+SPEED_KEEP = 200       # rows kept in speed.csv
+SPEED_GAP_S = 300      # wait this long after a test before another one
+SPEED_MAX_PER_DAY = 6  # automatic tests a day, at most
+SPEED_DAY_CAP = 12     # tests a day in all, "Test now" included: each one moves ~100 MB
+_speed = {"running": False, "error": None}
+_speed_lock = threading.Lock()
+
+
+def speed_per_day():
+    """Automatic tests a day, 0 to 6 (PANEL_SPEEDTEST in .env); 0 = only the button; None = off.
+    Read on every use: the scheduler always runs, so changing the file needs no restart."""
+    f = CONFIG / "speedtest"
+    if not f.exists() or not shutil.which("speedtest-go"):
+        return None
+    try:
+        return min(SPEED_MAX_PER_DAY, max(0, int(f.read_text().strip() or 0)))
+    except ValueError:
+        return 0
+
+
+def speed_history():
+    if not SPEED_LOG.exists():
+        return []
+    rows = []
+    for row in csv.reader(SPEED_LOG.read_text().splitlines()):
+        try:
+            rows.append([int(row[0]), float(row[1]), float(row[2]), int(row[3]), row[4]])
+        except (IndexError, ValueError):
+            pass
+    return rows
+
+
+def speedtest():
+    """One test against the nearest speedtest.net server: 10 s down, 15 s up, ~100 MB in all.
+    It runs on the server, so its own Wi-Fi is part of what gets measured."""
+    out = subprocess.run(["speedtest-go", "--json"], capture_output=True, text=True, timeout=120)
+    s = json.loads(out.stdout)["servers"][0]
+    # speedtest-go reports bytes per second and nanoseconds
+    return [int(time.time()), round(s["dl_speed"] * 8 / 1e6, 1), round(s["ul_speed"] * 8 / 1e6, 1),
+            round(s["latency"] / 1e6), s.get("name") or ""]
+
+
+def speed_tries():
+    day_ago = time.time() - 24 * 3600
+    if not SPEED_TRIES.exists():  # e.g. after an update: the last result still counts
+        return [r[0] for r in speed_history()[-1:] if r[0] >= day_ago]
+    tries = []
+    for t in SPEED_TRIES.read_text().split():
+        try:
+            if int(t) >= day_ago:
+                tries.append(int(t))
+        except ValueError:
+            pass
+    return tries
+
+
+def speed_next_ok(tries):
+    """When the next test may start: after the gap, and the next day once the day's tests are used."""
+    if len(tries) >= SPEED_DAY_CAP:
+        return tries[-SPEED_DAY_CAP] + 24 * 3600
+    return tries[-1] + SPEED_GAP_S if tries else 0
+
+
+def start_speedtest():
+    """Run a test in the background. False if one is running, or it's too soon (see speed_next_ok).
+    Failed tests count too: one that breaks after moving its 100 MB must not repeat every few minutes."""
+    if not _speed_lock.acquire(blocking=False):
+        return False
+    tries = speed_tries()
+    if time.time() < speed_next_ok(tries):
+        _speed_lock.release()
+        return False
+    tmp = SPEED_TRIES.with_suffix(".tmp")
+    tmp.write_text("".join(f"{t}\n" for t in tries + [int(time.time())]))
+    os.replace(tmp, SPEED_TRIES)
+    _speed["running"] = True
+
+    def work():
+        try:
+            rows = speed_history() + [speedtest()]
+            tmp = SPEED_LOG.with_suffix(".tmp")  # write aside, then swap: a power cut can't empty the log
+            with tmp.open("w", newline="") as f:
+                csv.writer(f).writerows(rows[-SPEED_KEEP:])
+            os.replace(tmp, SPEED_LOG)
+            _speed["error"] = None
+        except Exception as e:  # offline, server busy, odd output: show it, try again next time
+            _speed["error"] = str(e) or type(e).__name__
+        finally:
+            _speed["running"] = False
+            _speed_lock.release()
+    threading.Thread(target=work, daemon=True).start()
+    return True
+
+
+def speed_scheduler():
+    time.sleep(120)  # let the phone settle after a boot
+    while True:
+        per_day, tries = speed_per_day(), speed_tries()
+        if per_day and (not tries or time.time() - tries[-1] >= 24 * 3600 / per_day):
+            start_speedtest()
+        time.sleep(300)
+
+
+def speed_status():
+    per_day = speed_per_day()
+    if per_day is None:
+        return None
+    day_ago = time.time() - 24 * 3600
+    rows = speed_history()
+    return {"per_day": per_day, "running": _speed["running"], "error": _speed["error"],
+            "next_ok": speed_next_ok(speed_tries()),
+            "last": rows[-1] if rows else None, "day": [r for r in rows if r[0] >= day_ago]}
+
+
 INK_COLORS = {0: "black", 1: "cyan", 2: "magenta", 3: "yellow", 4: "light cyan", 5: "light magenta"}
 
 
@@ -338,7 +454,8 @@ def devices():
     """Everything connected to the home router (TP-Link, through its web API), plus devices seen
     before that are gone now, so a camera that drops off the Wi-Fi shows up as offline.
     Config: router URL and password in ~/.config/drawer-server/router (one per line), optional
-    'MAC Name' lines in ~/.config/drawer-server/device-names."""
+    'MAC Name' lines in ~/.config/drawer-server/device-names, and MACs to leave out (one per line,
+    e.g. a camera's Wi-Fi that was turned off on purpose) in ~/.config/drawer-server/device-hide."""
     from tplinkrouterc6u import TplinkRouterProvider  # only installed when the router card is on
     url, password = (CONFIG / "router").read_text().splitlines()[:2]
     names = {}
@@ -347,6 +464,9 @@ def devices():
             if line.strip():
                 mac, name = line.split(None, 1)
                 names[mac.upper().replace(":", "-")] = name.strip()
+    hide = set()
+    if (CONFIG / "device-hide").exists():
+        hide = {m.strip().upper().replace(":", "-") for m in (CONFIG / "device-hide").read_text().split()}
     router = TplinkRouterProvider.get_client(url, password)
     router.authorize()  # TP-Link allows one admin at a time: this logs out a browser session
     try:
@@ -372,6 +492,8 @@ def devices():
     for mac, d in list(seen.items()):
         if now - d["last"] > 30 * 86400:  # forget devices gone for a month
             del seen[mac]
+            continue
+        if mac in hide:
             continue
         name = names.get(mac) or d["host"] or (d["ip"] or mac)
         # last_ip lets the page match a device to a person's phone even while it's away
@@ -432,7 +554,7 @@ def status(client_ip="127.0.0.1"):
     battery_stale = time.time() - _battery_ok_at > 600
     return {"battery": {} if battery_stale else _battery, "battery_stale": battery_stale, "memory": memory(), "disk": disk(), "uptime_h": uptime_hours(),
             "services": services, "history": history,
-            "home": _home, "plug": _plug, "time": int(time.time()),
+            "home": _home, "plug": _plug, "time": int(time.time()), "speed": speed_status(),
             "cameras": {"names": CAMERA_NAMES, "home": is_home(client_ip)} if CAMERA_NAMES else None,
             # the server and its plug show in the server section, not with the other devices
             "self_ip": my_ip(), "plug_ip": PLUG_CONFIG.read_text().split()[1] if PLUG_CONFIG.exists() else None}
@@ -464,6 +586,12 @@ TEXT = {
            "svc": {"SSH": "Remote access", "NextDNS": "Ad blocking", "Luanti": "Kids' game", "Syncthing": "Photo backup",
                    "Cameras": "Cameras"},
            "use_note": "The dish reports how much is being used right now, not the top speed of the connection.",
+           "speed_down": "top download", "speed_up": "top upload", "test_now": "Test now", "testing": "testing… (about 30 s)",
+           "speed_wait": "just tested, try again in a few minutes",
+           "speed_by_ip": "open the panel by its IP address, not a name, to test", "speed_fail": "the last test failed",
+           "speed_ago": "speed test {t} ago", "speed_none": "no speed test yet", "speed_day": "Speed tests, last 24 h",
+           "speed_every": "It tests by itself {n} times a day.", "speed_every1": "It tests by itself once a day.",
+           "speed_note": "Measured from the server over its own Wi-Fi, against the nearest speedtest.net server; each test moves about 100 MB.",
            "server": "Server", "show_chart": "📈 24 h", "n_of": "{a} of {b} online", "wifi": "Wi-Fi",
            "photos": "Photos", "no_details": "No details while away.",
            "printer_off": "not answering (off?)", "lowest": "lowest: {c} {p}%",
@@ -497,6 +625,12 @@ TEXT = {
            "svc": {"SSH": "Acceso remoto", "NextDNS": "Bloqueo de publicidad", "Luanti": "Juego de los chicos", "Syncthing": "Backup de fotos",
                    "Cameras": "Cámaras"},
            "use_note": "La antena dice cuánto se está usando en este momento, no la velocidad máxima de la conexión.",
+           "speed_down": "bajada máxima", "speed_up": "subida máxima", "test_now": "Medir ahora", "testing": "midiendo… (unos 30 s)",
+           "speed_wait": "recién se midió, probá en unos minutos",
+           "speed_by_ip": "abrí el panel con su dirección IP, no con un nombre, para medir", "speed_fail": "falló la última medición",
+           "speed_ago": "test de velocidad de hace {t}", "speed_none": "todavía sin medir", "speed_day": "Mediciones, últimas 24 h",
+           "speed_every": "Mide sola {n} veces por día.", "speed_every1": "Mide sola una vez por día.",
+           "speed_note": "Medido desde el server por su propio WiFi, contra el servidor de speedtest.net más cercano; cada medición usa unos 100 MB.",
            "server": "Servidor", "show_chart": "📈 24 h", "n_of": "{a} de {b} conectados", "wifi": "WiFi",
            "photos": "Fotos", "no_details": "Sin detalles mientras está afuera.",
            "printer_off": "no contesta (¿apagada?)", "lowest": "la más baja: {c} {p}%",
@@ -581,11 +715,15 @@ PAGE = """<!doctype html>
 
 <section class="card hidden" id="net">
   <div class="label">🌐 __INTERNET__</div>
-  <div class="stats">
+  <div class="stats" id="net_now">
     <div><div class="big" id="net_lat">–</div><div class="sub">__LATENCY__</div></div>
     <div><div class="big" id="net_down">–</div><div class="sub">⬇ __DOWN_NOW__</div></div>
     <div><div class="big" id="net_up">–</div><div class="sub">⬆ __UP_NOW__</div></div>
   </div>
+  <div class="hidden" id="net_speed"><div class="stats" style="margin-top:12px">
+    <div><div class="big" id="sp_down">–</div><div class="sub">⬇ __SPEED_DOWN__</div></div>
+    <div><div class="big" id="sp_up">–</div><div class="sub">⬆ __SPEED_UP__</div></div></div>
+    <div class="sub" id="speed_last"></div><button class="link" id="speed_btn">__TEST_NOW__</button></div>
   <details data-k="net"><summary class="sub">__DETAILS__</summary><div class="more" id="net_more"></div></details>
 </section>
 
@@ -677,7 +815,7 @@ async function refresh() {
                            : p == null ? '' : plugged && p >= 80 ? T.unplug.replace('{p}', p)
                            : !plugged && p <= 30 ? T.plug.replace('{p}', p) : '';
     const people = Array.isArray(h.people) ? h.people : null;
-    drawInternet(h.starlink);
+    drawInternet(h.starlink, s.speed, s.time);
     drawCameras(s.cameras, s.self_ip);
     drawPeople(people, h);
     drawConnection(h.devices, s);
@@ -701,12 +839,14 @@ function drawOverall(s, h) {
   $('overall').className = 'overall ' + (probs.length ? 'bad' : 'ok');
 }
 
-function drawInternet(sl) {
-  show('net', sl);
-  if (!sl) return;
+function drawInternet(sl, sp, now) {
+  show('net', sl || sp);
+  show('net_now', sl);
+  drawSpeed(sp, now);
+  if (!sl) { set('net_more', speedRows(sp)); return; }
   if (sl.error) {
     ['net_lat', 'net_down', 'net_up'].forEach(id => set(id, '–'));
-    set('net_more', `<div class="sub" style="color:var(--bad)">⚠️ ${T.net_unknown}: ${esc(sl.error)}</div>`);
+    set('net_more', `<div class="sub" style="color:var(--bad)">⚠️ ${T.net_unknown}: ${esc(sl.error)}</div>` + speedRows(sp));
     return;
   }
   const unit = u => ` <span class="unit">${u}</span>`;
@@ -715,8 +855,43 @@ function drawInternet(sl) {
   set('net_up', num(sl.up_mbps, 1) + unit('Mbps'));
   set('net_more', row(T.obstructed, num(sl.obstructed_pct) + '%') + row(T.dish_up, ago(Math.round(sl.uptime_h * 60))) +
     (sl.alerts.length ? row(T.alerts, '⚠️ ' + esc(sl.alerts.join(', ')), 'color:var(--warn)') : '') +
-    `<div class="sub" style="padding-top:6px">${T.use_note}</div>`);
+    `<div class="sub" style="padding-top:6px">${T.use_note}</div>` + speedRows(sp));
 }
+
+// speed test: the last result on the card, the last 24 h under Details, a button to test now
+const mbps = r => `⬇ ${num(r[1], 1)} ⬆ ${num(r[2], 1)} Mbps · ${r[3]} ms`;
+// what the button says after a tap, kept for a while (browser clock); the phone's clock for the rest
+let speedMsg = null, speedMsgUntil = 0;
+function drawSpeed(sp, now) {
+  show('net_speed', sp);
+  if (!sp) return;
+  const l = sp.last, msg = Date.now() < speedMsgUntil ? speedMsg : null;
+  const unit = ' <span class="unit">Mbps</span>';
+  set('sp_down', l ? num(l[1], 1) + unit : '–');
+  set('sp_up', l ? num(l[2], 1) + unit : '–');
+  set('speed_last', sp.error && !sp.running ? `<span style="color:var(--bad)">⚠️ ${T.speed_fail}</span>`
+    : l ? '🚀 ' + T.speed_ago.replace('{t}', ago(Math.max(0, Math.round((now - l[0]) / 60)))) : '🚀 ' + T.speed_none);
+  const wait = now < sp.next_ok;
+  $('speed_btn').textContent = sp.running ? T.testing : msg || (wait ? T.speed_wait : T.test_now);
+  $('speed_btn').disabled = sp.running || wait || msg === T.testing;
+}
+function speedRows(sp) {
+  if (!sp) return '';
+  const note = (sp.per_day ? (sp.per_day === 1 ? T.speed_every1 : T.speed_every.replace('{n}', sp.per_day)) + ' ' : '') + T.speed_note;
+  return `<div class="label" style="padding-top:10px">🚀 ${T.speed_day}</div>` +
+    sp.day.slice().reverse().map(r => row(new Date(r[0] * 1000).toLocaleTimeString(LANG, {hour: '2-digit', minute: '2-digit'}), mbps(r))).join('') +
+    (sp.error ? `<div class="sub" style="color:var(--bad)">⚠️ ${esc(sp.error)}</div>` : '') +
+    `<div class="sub" style="padding-top:6px">${note}</div>`;
+}
+$('speed_btn').onclick = async () => {
+  const say = (m, s) => { speedMsg = m; speedMsgUntil = Date.now() + s * 1000; $('speed_btn').textContent = m; };
+  say(T.testing, 10);
+  $('speed_btn').disabled = true;
+  const r = await fetch('/api/speedtest', {method: 'POST'}).catch(() => null);
+  if (!r || r.status === 403) say(T.speed_by_ip, 60);  // opened by a name, not the IP: see same_site()
+  else if (r.status === 429) say(T.speed_wait, 60);
+  setTimeout(refresh, 2000);
+};
 
 // cameras: a still per camera every 2.5 s while the page is visible, tap one for live video
 let cams = null;
@@ -999,6 +1174,19 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        # "Test now": only from the panel's own page, so another site can't burn ~100 MB per visit
+        if self.path != "/api/speedtest" or speed_per_day() is None:
+            self.send_error(404)
+        elif not self.same_site():
+            self.send_error(403)
+        elif not start_speedtest():
+            self.send_error(429)  # one running, or the last one was a few minutes ago
+        else:
+            self.send_response(202)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
     def same_site(self):
         """The request comes from the panel's own page. Browsers don't stop other sites from opening
         websockets here, and a site's name pointed at the phone (DNS rebinding) would read the stills,
@@ -1104,6 +1292,7 @@ if __name__ == "__main__":
     start_home_readers()
     if PLUG_CONFIG.exists():
         threading.Thread(target=plug_keeper, daemon=True).start()
+    threading.Thread(target=speed_scheduler, daemon=True).start()
     CAMERA_NAMES = load_names(CONFIG / "cameras")  # names only; the codes stay in go2rtc's config
     if CAMERA_NAMES:
         kill_leftovers(DATA / "cams")

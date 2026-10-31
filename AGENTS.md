@@ -37,7 +37,7 @@ The human may name things loosely ("the panel", "the plug", "photos", "the game"
 
 | Topic | Files |
 |---|---|
-| Status panel web page and its cards | `termux/panel/panel.py`, deployed by `scripts/08-panel.sh`, cards set by `PANEL_*` in `.env` |
+| Status panel web page and its cards (internet, speed test, who's home, devices, ink…) | `termux/panel/panel.py`, deployed by `scripts/08-panel.sh`, cards set by `PANEL_*` in `.env` (e.g. `PANEL_SPEEDTEST`, `PANEL_DEVICE_HIDE`) |
 | What the router knows about each device, naming devices | `scripts/router-devices.sh` (read-only; detail in `local/router-devices.json`), names go in `PANEL_DEVICE_NAMES` |
 | Charging between 30 and 80% (smart plug) | `scripts/10-smart-plug.sh`, `termux/plug-setup.py`; the cycling itself runs inside the panel |
 | Photo backup from family phones | `scripts/09-syncthing.sh` |

@@ -27,9 +27,11 @@ ones you don't have.
 | Name on top | nothing | `PANEL_TITLE="Our house"` |
 | Spanish | nothing | `PANEL_LANG=es` |
 | 🛰️ Internet | a Starlink dish | `PANEL_STARLINK=yes` |
+| 🚀 Speed test | nothing; each test moves ~100 MB, mind data caps | `PANEL_SPEEDTEST=4`: tests a day, 0 to 6 (0 = only the "Test now" button) |
 | 🏠 Who's home | each person's phone with a fixed IP in the router | `PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"` (simple names: letters, numbers, - or _) |
 | 📶 Devices on the Wi-Fi | a TP-Link router (tested: Archer AX23) | `PANEL_ROUTER=tplink`, `ROUTER_URL`, `ROUTER_PASSWORD` |
 | Device names | the router card | `PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Front door camera,…"` |
+| Hide devices | the router card | `PANEL_DEVICE_HIDE="F4-70-18-00-00-03,…"`, e.g. a camera's Wi-Fi you turned off because it's on cable (otherwise it shows as an offline camera for a month) |
 | 🖨️ Ink levels | an Epson printer with a fixed IP | `PANEL_PRINTER_IP=192.168.1.40` |
 | 📷 Photo backup | step 9, run with the same name as in `PANEL_PEOPLE` | nothing: step 9 adds it |
 | 🔌 Smart plug | step 10, and a fixed IP for the plug in the router | nothing: step 10 adds it to the battery card. Optional `CHARGE_LOW` / `CHARGE_HIGH` (default 30 and 80) |
@@ -79,6 +81,7 @@ To change anything later (a name, a person, a new card), edit `.env` and run
 | 🖨️ Ink | Epson's own SNMP status query (`@BDC ST2`), which works on old models like the XP-211 that don't fill the standard printer-supplies table. |
 | 📷 Photo backup | Syncthing's local API: whether each phone is connected, how much is left, the download speed. Folders from phones that aren't in `PANEL_PEOPLE` get a card of their own. |
 | 🔌 Smart plug | the panel itself switches the plug: it checks every minute, cuts the charger at 80% and turns it back on at 30% (`CHARGE_HIGH` and `CHARGE_LOW`). If the battery can't be read for 30 minutes it turns the charger on, and the plug comes back on after a power cut, so a glitch ends with a full battery, never a flat one. It talks to the plug over the home network only. |
+| 🚀 Speed test | [speedtest-go](https://github.com/showwin/speedtest-go) (a Termux package) against the nearest speedtest.net server: 10 s down, 15 s up, ~100 MB. It runs on the server, so the server's own Wi-Fi is part of the result: on 2.4 GHz it can't show more than about two thirds of the link speed, even if the internet is faster. The last result stays on the card, the last 24 h under Details. "Test now" works only from the panel's own page and waits 5 minutes between tests. |
 | 📷 Cameras | home only, decided by the address the request comes from (Tailscale counts as away). For each camera the panel runs one ffmpeg that decodes only full frames from go2rtc's small stream, so a new still arrives every ~2.5 s; it starts when someone opens the page and stops 30 s after the last request. The first still takes a few seconds. Tapping a camera opens live video, which the panel passes through from go2rtc (it only listens on the phone); if the screen can't play the big stream within 5 s, it switches to the small one. |
 
 What's folded or open (the chart, each person, each group of devices) is remembered on each browser.
