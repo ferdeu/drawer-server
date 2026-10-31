@@ -53,6 +53,10 @@ class FakeGo2rtc:
         if head.startswith(b"GET /video-rtc.js"):
             conn.sendall(CRLF.join(["HTTP/1.0 200 OK", "Content-Type: text/javascript", "",
                                     "export class VideoRTC {}"]).encode())
+        elif b"src=cam1 " in head:  # go2rtc turns the websocket down but keeps the connection open
+            conn.sendall(CRLF.join(["HTTP/1.1 400 Bad Request", "Content-Length: 0", "", ""]).encode())
+            while data := conn.recv(4096):
+                self.requests.append(data.decode())
         else:
             conn.sendall(CRLF.join(["HTTP/1.1 101 Switching Protocols", "Upgrade: websocket",
                                     "Connection: Upgrade", "", ""]).encode())
@@ -122,11 +126,11 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(self.fetch("/live/ws?src=cam1")[0], 404)
         self.assertIsNone(json.loads(self.fetch("/api/status")[1])["cameras"])
 
-    def upgrade(self, path, host="192.168.1.50:8080", origin="http://192.168.1.50:8080"):
+    def upgrade(self, path, host="192.168.1.50:8080", origin="http://192.168.1.50:8080", extra=()):
         s = socket.create_connection(("127.0.0.1", self.server.server_port), timeout=5)
         s.sendall(CRLF.join([f"GET {path} HTTP/1.1", f"Host: {host}", f"Origin: {origin}",
                              "Connection: Upgrade", "Upgrade: websocket", "Sec-WebSocket-Version: 13",
-                             "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", "", ""]).encode())
+                             "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", *extra, "", ""]).encode())
         return s
 
     def answer(self, s):
@@ -175,6 +179,35 @@ class RoutesTest(unittest.TestCase):
         sent = self.go2rtc.requests[-1]
         self.assertTrue(sent.startswith("GET /api/ws?src=cam2_hd HTTP/1.1" + CRLF), sent)
         self.assertNotIn("Origin:", sent)  # go2rtc refuses websockets from other origins
+
+    def test_live_needs_websocket(self):
+        # a plain request would turn the pass-through into an open door to go2rtc's API
+        asked = len(self.go2rtc.requests)
+        self.assertEqual(self.fetch("/live/ws?src=cam2")[0], 400)
+        self.assertEqual(len(self.go2rtc.requests), asked)
+
+    def test_live_refused_hangs_up(self):
+        # go2rtc said no: pass its answer on and close, so nothing else reaches go2rtc
+        s = self.upgrade("/live/ws?src=cam1")
+        self.assertTrue(self.answer(s).startswith(b"HTTP/1.1 400"))
+        asked = len(self.go2rtc.requests)
+        try:
+            s.sendall(f"GET /api/streams HTTP/1.1{CRLF}Host: x{CRLF}{CRLF}".encode())
+            self.assertEqual(s.recv(4096), b"")
+        except OSError:
+            pass  # closed already: also fine
+        s.close()
+        time.sleep(0.2)
+        self.assertEqual(len(self.go2rtc.requests), asked)
+
+    def test_live_forwards_only_websocket_headers(self):
+        s = self.upgrade("/live/ws?src=cam2_hd", extra=["Cookie: secret=1", "X-Forwarded-For: 10.0.0.9"])
+        self.assertTrue(self.answer(s).startswith(b"HTTP/1.1 101"))
+        s.close()
+        sent = self.go2rtc.requests[-1]
+        self.assertNotIn("Cookie", sent)
+        self.assertNotIn("X-Forwarded-For", sent)
+        self.assertIn("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", sent)
 
     def test_live_bad_source(self):
         for path in ("/live/ws?src=cam4", "/live/ws?src=cam0", "/live/ws?src=cam1_x", "/live/ws?src=exec:sh",

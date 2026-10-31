@@ -405,6 +405,8 @@ STILLS = None
 CAMERA_PATH = re.compile(r"/api/camera/([1-9][0-9]?)\.jpg(\?.*)?")
 LIVE_PATH = re.compile(r"/live/ws\?src=cam([1-9][0-9]?)(_hd)?")
 LIVE_IDLE_S = 30  # hang up live video after this long without a byte from go2rtc
+LIVE_HEADERS = ("upgrade", "connection", "sec-websocket-key", "sec-websocket-version",
+                "sec-websocket-extensions", "sec-websocket-protocol")
 
 
 def status(client_ip="127.0.0.1"):
@@ -1038,14 +1040,33 @@ class Handler(BaseHTTPRequestHandler):
 
     def live(self, source):
         """Pass a live-video websocket through to go2rtc, byte for byte."""
+        # only a websocket: a plain request would let the browser talk to go2rtc's API directly
+        if (self.headers.get("Upgrade", "").lower() != "websocket"
+                or "upgrade" not in self.headers.get("Connection", "").lower()):
+            self.send_error(400)
+            return
         try:
             up = socket.create_connection(("127.0.0.1", GO2RTC_PORT), timeout=5)
         except OSError:
             self.send_error(502)
             return
-        # same request, minus Host and Origin: go2rtc refuses websockets from other origins
-        headers = "".join(f"{k}: {v}\r\n" for k, v in self.headers.items() if k.lower() not in ("host", "origin"))
-        up.sendall(f"GET /api/ws?src={source} HTTP/1.1\r\nHost: 127.0.0.1:{GO2RTC_PORT}\r\n{headers}\r\n".encode())
+        # only the websocket handshake headers; no Origin, go2rtc refuses websockets from other origins
+        headers = "".join(f"{k}: {v}\r\n" for k, v in self.headers.items() if k.lower() in LIVE_HEADERS and "\r" not in v and "\n" not in v)
+        self.close_connection = True
+        try:
+            up.sendall(f"GET /api/ws?src={source} HTTP/1.1\r\nHost: 127.0.0.1:{GO2RTC_PORT}\r\n{headers}\r\n".encode())
+            answer = b""
+            while b"\r\n\r\n" not in answer and len(answer) < 16384:
+                if not (data := up.recv(4096)):
+                    break
+                answer += data
+            self.connection.sendall(answer)
+        except OSError:
+            up.close()
+            return
+        if not answer.startswith(b"HTTP/1.1 101"):  # turned down: hang up, nothing else goes through
+            up.close()
+            return
         # a camera that goes silent, or a tablet that drops off the Wi-Fi, must not hold the line forever
         up.settimeout(LIVE_IDLE_S)
         browser = self.connection
@@ -1054,7 +1075,6 @@ class Handler(BaseHTTPRequestHandler):
         for opt, value in (("TCP_KEEPIDLE", 20), ("TCP_KEEPINTVL", 5), ("TCP_KEEPCNT", 3), ("TCP_USER_TIMEOUT", 20000)):
             if hasattr(socket, opt):
                 browser.setsockopt(socket.IPPROTO_TCP, getattr(socket, opt), value)
-        self.close_connection = True
 
         def pipe(read, sock):
             try:
