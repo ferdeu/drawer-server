@@ -45,6 +45,9 @@ if [ "$GAME" = mineclonia ]; then
   JSON="$(curl -sSf https://content.luanti.org/api/packages/ryvnf/mineclonia/releases/ || echo '{}')"
   MC_URL="$(grep -o '"url": *"[^"]*"' <<<"$JSON" | head -1 | sed 's/.*"\(http[^"]*\)"/\1/' || true)"
   MC_VER="$(grep -o '"title": *"[^"]*"' <<<"$JSON" | head -1 | sed 's/.*: *"\([^"]*\)"/\1/' || true)"
+  # both go inside a command run on the phone: accept only plain text, nothing a shell would read
+  [[ "$MC_VER" =~ ^[A-Za-z0-9._\ -]+$ ]] || MC_VER=""
+  [[ "$MC_URL" =~ ^https://content\.luanti\.org/[A-Za-z0-9/._?=\&-]+$ ]] || MC_URL=""
   if [ -n "$MC_URL" ] && [ -n "$MC_VER" ]; then
     echo "  Mineclonia $MC_VER"
   else
