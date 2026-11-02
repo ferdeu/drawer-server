@@ -6,6 +6,13 @@ Built from `2026-10-31-recorder-brief.md` (decisions agreed with the owner) plus
 the server the same day. Marks: **(owner)** the owner said it; **(agreed)** proposed in the brief and
 accepted by the owner; **(my call)** decided while writing this, for the owner to check.
 
+**Update 2026-11-02:** the server moved from the Moto G24 Power to a **Motorola Edge 40** (MediaTek
+Dimensity 8020, 4 fast + 4 efficient cores, 8 GB, Android 15, ffmpeg 9.0.2). Every number below that
+depends on the phone was measured again on it, with the plan's exact ffmpeg commands; both are kept.
+The design doesn't change. What changed: decoding is roughly a quarter cheaper per camera, go2rtc costs more than
+the old estimate (that was a guess; now it's measured), RAM is higher, and the disk is bigger.
+See "Different phones, different numbers".
+
 ## Intent
 
 Step 11 lets the family *watch* the cameras at home. This adds *recording*: short clips when something
@@ -72,7 +79,7 @@ so a future panel screen can edit settings without changing how the programs wor
 - A **permanent warning**. A recordings share sitting at its cap is normal operation, not a problem.
 - Anything that breaks Path A (no unlock, wipe, root). Nothing here needs it.
 
-## What we know (measured 2026-10-31 on the real server)
+## What we know (measured 2026-10-31 on the Moto G24 Power, again 2026-11-02 on the Edge 40)
 
 ### OpenCV on this phone
 
@@ -86,48 +93,62 @@ The owner asked about "a Python library that detects motion": that's OpenCV. Fin
 - Its numpy needs a newer system C++ library than the server has (55 Termux packages are behind), so
   it only works after a full `pkg upgrade` first. Unpacked into a throwaway folder with that library,
   OpenCV 5.0 ran fine. Nothing was installed on the server; the test folder is deleted.
+- Edge 40 (fresh Termux, 0 packages behind): the "full upgrade first" problem is probably gone there,
+  but the ~514 MB, the extra repository and the cost below still hold. Not installed. Decision unchanged.
 
 ### CPU per camera
 
 One camera (Lateral, sub stream 768×432 @ 10 fps, H.265 through go2rtc), 60 s per option, % of one
-core (the phone has 8). "Diff" = count pixels that changed since the previous look.
+core (both phones have 8). "Diff" = count pixels that changed since the previous look. G24 rows include
+the Python diff; Edge 40 rows are ffmpeg only (the Python part costs ~0.2% at two looks a second, see
+below). "—" = not measured on that phone.
 
-| Option | CPU (of one core) | RAM |
-|---|---|---|
-| Look only at full frames (keyframes), pure Python diff | **3.7%** | 51 MB |
-| Decode every frame, look twice a second, pure Python diff (160×90) | 17.3% | 61 MB |
-| Same, numpy diff | 14.7% | 76 MB |
-| Same, OpenCV background subtraction (MOG2, 320×180) | 20.1% | 136 MB |
-| OpenCV MOG2, five looks a second | 30.6% | 136 MB |
-| OpenCV opens the camera itself (all 10 fps) | 25.2% | 105 MB |
-| Hardware decoder (`hevc_mediacodec`) | 17.7% (no gain) | 78 MB |
-| Every frame, 1 thread, no loop filter, `+fast` (cheapest full decode found) | **14.4%** | — |
-| Recording: HD stream copied, no decode | **2.1–2.5%** | 29 MB |
+| Option | G24: CPU (of one core) | G24: RAM | Edge 40: CPU | Edge 40: RAM |
+|---|---|---|---|---|
+| Look only at full frames (keyframes), pure Python diff | **3.7%** | 51 MB | **3.1%** | 51 MB |
+| Plan's light command (keyframes + still output) | — | — | **3.1%** | 73 MB |
+| Decode every frame, look twice a second, pure Python diff (160×90) | 17.3% | 61 MB | 12.2% | 59 MB |
+| Same at 320×180 | — | — | 13.5% | 59 MB |
+| Same, numpy diff | 14.7% | 76 MB | — | — |
+| Same, OpenCV background subtraction (MOG2, 320×180) | 20.1% | 136 MB | — | — |
+| OpenCV MOG2, five looks a second | 30.6% | 136 MB | — | — |
+| OpenCV opens the camera itself (all 10 fps) | 25.2% | 105 MB | — | — |
+| Hardware decoder (`hevc_mediacodec`) | 17.7% (no gain) | 78 MB | 13.2% (no gain) | 77 MB |
+| Every frame, 1 thread, no loop filter, `+fast` (cheapest full decode found) | **14.4%** | — | **9.4%** | 46 MB |
+| Plan's fast command (every frame, two looks a second + still output) | — | — | **12.3%** | 82 MB |
+| Recording: HD stream copied, no decode | **2.1–2.5%** | 29 MB | **2.5%** | 45 MB |
 
 What this says: **decoding the video is the cost, not the detection method.** Anything that looks
 at every frame costs ~15% of a core per camera, OpenCV or not. Looking only at full frames costs
 ~4%, but on these cameras a full frame comes **every ~4 s** (both streams, measured: 44 in 180 s;
-the 2.5 s noted on 2026-10-28 is no longer true, so code must not assume an interval).
+the 2.5 s noted on 2026-10-28 is no longer true, so code must not assume an interval). Edge 40, same
+cameras: one every 4.2 s, so it's the cameras, not the server.
 
 Pure Python at 320×180 took 37–45 ms per look with a naive loop: fine once every 4 s (~1%), but ~8%
 of a core at two looks a second, so the fast mode needs the cheaper comparison described below.
+The plan's comparison (C-speed `translate` + `count`): 1.85 ms per look on the G24, **1.08 ms** on the
+Edge 40 (a simpler naive loop: 15 ms and 7.6 ms).
 
 ### Other measurements
 
-- HD stream: **1.0–1.4 Mbit/s** (0.12–0.17 MB/s) per camera, 2304×1296 @ 15 fps.
+- HD stream: **1.0–1.4 Mbit/s** (0.12–0.17 MB/s) per camera, 2304×1296 @ 15 fps (Edge 40: 1.3 Mbit/s,
+  the same; it's the camera).
 - Writing the HD stream to disk all the time (rolling segments, as the brief first proposed) would
   write 10–15 GB a day per camera, 30–44 GB a day for three: ~11–16 TB a year to the phone's flash.
 - **Pre-roll in memory works** (spike): ffmpeg copies the HD stream as fragmented MP4 to a pipe
   (`-c copy -an -tag:v hvc1 -f mp4 -movflags frag_keyframe+empty_moov+default_base_moof pipe:1`).
   Each `moof`+`mdat` pair is one fragment starting at a full frame (~4 s, ~0.5 MB). Header boxes
   (`ftyp`+`moov`) + the last fragments, written to a file, remuxed with `-c copy -movflags +faststart`,
-  gave a valid 16 s, 2304×1296 `hvc1` clip. Thumbnail from the clip: 0.7 s.
+  gave a valid 16 s, 2304×1296 `hvc1` clip. Thumbnail from the clip: 0.7 s. Edge 40 with ffmpeg 9.0.2:
+  same result (16.0 s, `hevc`/`hvc1`, 2304×1296), remux 0.13 s, thumbnail 0.48 s, 4 fragments 2.9 MB.
 - **Pipe gotcha** (hit in the spike): stopping an ffmpeg that writes to a pipe nobody reads hangs,
   because ffmpeg tries to write its trailer. Close the pipe first, then kill.
 - At rest (calm morning, 06:30) full frame to full frame at 320×180, pixels changed by more than 25
   levels: median 0.02%, max 0.28% across the three cameras. No wind then, so the plant was still;
   the windy case is still to be seen.
-- Free disk: 49 GB of 108 GB; photo backups 20 GB in `/sdcard/Backups`.
+- Free disk: 49 GB of 108 GB; photo backups 20 GB in `/sdcard/Backups`. Edge 40: **216 GB free of
+  245 GB**, so the default recordings share (10% of the disk) is ~24 GB instead of ~11 GB.
+- Server Wi-Fi: G24 on 2.4 GHz, 78 Mbit/s link; Edge 40 on **5 GHz, 600 Mbit/s**, signal −38 dBm.
 
 ## How it works
 
@@ -185,9 +206,10 @@ and RAM than the simple way while the decoding cost (the real cost) stays the sa
 
 - The motion ffmpeg decodes `camN` (the small stream), scales to **320×180 gray**, writes raw frames
   to its stdout. Two speeds, a setting (`RECORD_CHECK`):
-  - **fast**: decodes every frame and looks twice a second (`fps=2`), ~15% of a core per camera.
+  - **fast**: decodes every frame and looks twice a second (`fps=2`), ~15% of a core per camera on the G24,
+    ~12% on the Edge 40.
     Catches someone who crosses the view in a second or two.
-  - **light**: looks only at full frames (`-skip_frame nokey`), ~4% per camera, once every ~4 s on
+  - **light**: looks only at full frames (`-skip_frame nokey`), ~4% per camera (G24; ~3% on the Edge 40), once every ~4 s on
     these cameras. Can miss motion that starts and ends between two looks.
   - Default: **fast** (owner).
 - Each look compares with the previous one: the share of pixels whose brightness changed by more
@@ -208,7 +230,7 @@ and RAM than the simple way while the decoding cost (the real cost) stays the sa
 ### Panel stills from the recorder (owner asked, my call to do it)
 
 Without the recorder, the panel runs its own ffmpeg per camera for the stills while someone looks
-(full frames only, ~4% of a core per camera). A wall tablet looks all day, so with the recorder on
+(full frames only, ~4% of a core per camera on the G24, ~3% on the Edge 40). A wall tablet looks all day, so with the recorder on
 that would decode each camera twice. Instead, **the motion ffmpeg also writes the still**:
 
 - One ffmpeg per camera, two outputs from one decode (`-filter_complex` with `split`): the gray
@@ -221,7 +243,8 @@ that would decode each camera twice. Instead, **the motion ffmpeg also writes th
   its own ffmpeg for that camera. When it isn't (recorder off or down, camera not in `RECORD_CAMERAS`,
   ffmpeg restarting), the panel falls back to its own ffmpeg as today. The stills never stop because
   of the recorder.
-- Saves ~4% of a core per recorded camera while the panel is open (~11% for three). The JPEG costs
+- Saves ~4% of a core per recorded camera while the panel is open (~11% for three on the G24, ~9% on
+  the Edge 40). The JPEG costs
   little (one 768×432 image every ~4 s); the builder checks it adds under 1% of a core.
 
 ### "Looks obstructed"
@@ -347,17 +370,26 @@ including which cameras record.
   so the panel shows the new section and disk split.
 - Safe to re-run. Panel and recorder code should not drift apart between deploys (builder's call how).
 
-### CPU and RAM budget (three cameras, estimate from the measurements)
+### CPU and RAM budget (three cameras)
 
-| | light | fast (default) |
-|---|---|---|
-| Motion | ~14% | ~48% |
-| Recording (HD copy) | ~7% | ~7% |
-| go2rtc relaying 6 streams around the clock | ~5–10% | ~5–10% |
-| **Total, of one core** | **~25–30%** (3–4% of the phone) | **~60–65%** (~8% of the phone) |
-| RAM | ~260 MB | ~260 MB |
+G24: estimated from the one-camera numbers. Edge 40: **measured** with the plan's exact commands, three
+cameras at once (fast: 180 s, light: 120 s), recorder Python not included (~0.2% and ~20–30 MB).
 
-Plus ~4–6 Mbit/s constantly over the server's Wi-Fi (its 2.4 GHz link is 78 Mbit/s). Tip for the
+| | G24 light (est.) | G24 fast (est.) | Edge 40 light | Edge 40 fast (default) |
+|---|---|---|---|---|
+| Motion | ~14% | ~48% | 9.5% | 38.9% |
+| Recording (HD copy) | ~7% | ~7% | 6.5% | 6.0% |
+| go2rtc relaying 6 streams around the clock | ~5–10% (guess) | ~5–10% (guess) | **21.9%** | **20.7%** |
+| **Total, of one core** | **~25–30%** (3–4% of the phone) | **~60–65%** (~8% of the phone) | **~38%** (4.7%) | **~66%** (8.2%) |
+| RAM | ~260 MB | ~260 MB | ~370 MB + Python | ~400 MB + Python |
+
+Same total as the estimate in fast mode, split differently: go2rtc costs ~20% of a core for six
+streams (the guess was 5–10%), decoding costs less. In light mode go2rtc is now the biggest part.
+RAM is ~400 MB, not ~260 MB (each motion ffmpeg ~65–80 MB, each copy ~45 MB); the Edge 40 had ~3 GB
+available with every other service running, so it fits.
+
+Plus ~7 Mbit/s constantly over the server's Wi-Fi (measured 7.2 Mbit/s for the six streams on the Edge 40,
+on a 600 Mbit/s 5 GHz link; the G24's estimate was 4–6 Mbit/s on a 78 Mbit/s 2.4 GHz link). Tip for the
 docs: lowering the sub stream's frame rate in the camera's own settings cuts the fast mode's cost.
 With the panel open, the panel's own stills ffmpeg no longer runs for recorded cameras (see "Panel
 stills from the recorder"), so the real total is a bit lower than this table plus today's stills.
@@ -366,6 +398,26 @@ stills from the recorder"), so the real total is a bit lower than this table plu
 services, more so in a closed drawer or while charging. It is measured on the real server (see
 Tests), and the docs must mention it: watch the panel's 🌡️ card (it already warns in the top line at
 40 °C), give the phone some air, and use `light` mode or fewer cameras if it runs hot.
+
+### Different phones, different numbers
+
+The recorder will run on whatever phone people use, so the docs must not promise the test phone's
+numbers. What depends on what:
+
+- **The phone:** CPU per camera (the decode; an older or slower chip can cost twice as much, and on
+  phones with fast and slow cores the same work shows a different % depending on where Android runs
+  it), go2rtc's share, Python's speed for the comparison, RAM, the disk size (and so the default
+  recordings share), the Wi-Fi band and signal, and heat (a slim phone or a closed drawer runs hotter).
+  The hardware decoder gave no gain on either test phone; don't count on it.
+- **The cameras:** how often a full frame comes (the light mode's look interval, how long "5 s before"
+  really is), the bitrate (disk per clip, Wi-Fi load), the sub stream's frame rate (the fast mode's cost).
+- **The scene:** how much motion there is decides how much gets written.
+
+So the docs (step 12 in `docs/path-a.md`, the recorder row in `docs/services.md`) give the measured
+numbers **with the phone they were measured on** (both test phones), say plainly that another phone can
+differ, and point to how to check your own: the panel's 🖥️ section (temperature, RAM) and the
+`check-server` skill, plus `light` mode or fewer cameras if it's too much. `docs/services.md`'s header
+already names its test phone; it gets the same note.
 
 ### Where the code goes (my call)
 
@@ -408,7 +460,8 @@ under step 8), `README.md` (steps table, what you need, "What's next"), `docs/pa
 including heat and the `pause` advice), `docs/panel.md` (Recordings section, disk budget, how they
 work, stills from the recorder), `docs/services.md` (the Camera recorder row with the measured
 CPU/RAM and temperature; "How many at once"),
-`AGENTS.md` (topic table row; steps 9–12 not in `setup.sh`; step 12 needs step 11),
+`AGENTS.md` (topic table row; steps 9–12 not in `setup.sh`; step 12 needs step 11), the
+"Different phones, different numbers" note in `docs/path-a.md` and `docs/services.md`,
 `.claude/skills/check-server` (recorder alive, obstructed cameras, disk split), `docs/img/panel.jpg`
 if the page changes visibly (fake data). Run the `path-a-reviewer` agent before committing.
 

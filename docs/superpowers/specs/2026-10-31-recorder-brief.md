@@ -67,6 +67,8 @@ later even if that UI isn't offered yet.
 
 - Phone: Moto G24 Power, Android 14, Termux, no root (Path A: never fastboot/unlock/wipe). 8 cores,
   8 GB RAM. Disk: 108 GB, 49 GB free; photo backups take 20 GB in `/sdcard/Backups`.
+  (Since 2026-11-02 the server is a Motorola Edge 40: Android 15, 8 GB, 245 GB with 216 free. The design
+  has the numbers measured again on it.)
 - go2rtc 1.9.15 (`scripts/11-cameras.sh`), listens only on 127.0.0.1: API 1984, RTSP 8554. Streams
   `camN` (sub) and `camN_hd` (main), N from 1 in `PANEL_CAMERAS` order. Its config holds the camera
   codes (600 permissions); codes must never reach logs, `ps` or the repo.

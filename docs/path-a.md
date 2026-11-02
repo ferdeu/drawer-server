@@ -246,7 +246,7 @@ fixed IP in the router (like the server in step 4). The window can be changed wi
 
 `scripts/11-cameras.sh`, needs `PANEL_CAMERAS` in `.env`
 
-At home, the panel shows a still of each camera that refreshes every ~2.5 s; tap one for live
+At home, the panel shows a still of each camera that refreshes every few seconds (~4 s on the tested cameras); tap one for live
 video, with ◀ ▶ to change camera and pinch to zoom. No cloud, no vendor app. Away from home the
 card says "home only": keep using the camera's own app there.
 

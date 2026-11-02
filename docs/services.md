@@ -3,6 +3,12 @@
 What you can run on the phone, with **numbers measured on the test phone** (Moto G24 Power,
 8 GB RAM, 8 cores, Android 14, Path A / no root) on 2026-10-24.
 
+**Your phone will differ.** CPU, RAM and heat depend on the phone's chip: on the second test phone
+(Motorola Edge 40, a faster chip) decoding camera video cost roughly a quarter less than on the G24. Disk
+and Wi-Fi depend on the phone too, and camera numbers also depend on the cameras (how often they
+send a full frame, their bitrate). Use these as a guide, and check your own server in the panel's
+🖥️ section (temperature, RAM, disk).
+
 Starting point: with Android + SSH + the NextDNS updater running, about **4.9 GB of RAM is
 available**, and **5.7 GB** after removing preinstalled bloat with `scripts/extra-debloat.sh`.
 Leave ~1 GB for Android itself, so plan with **~4–4.5 GB** for services.
@@ -17,8 +23,8 @@ Leave ~1 GB for Android itself, so plan with **~4–4.5 GB** for services.
 | **Minecraft Java server** (Paper 26.2, Java 25) | a world for the kids | **1.3 GB** idle, plan 2 GB with players | **~33% of one core** idle (of 8 cores) | ⭐⭐ medium | 🧪 measured, script pending |
 | **Syncthing** | automatic photo/file backup between phones and computers | **29 MB** idle | ~0 idle, bursts while syncing | ⭐⭐ medium | ✅ `scripts/09-syncthing.sh <name>` |
 | **Status panel** (small Python web page) | battery, temperature, RAM, disk, services, 24 h battery chart, charge reminder; photo backup progress; optional Starlink dish stats, speed tests (~100 MB each, 0–6 a day), Epson ink levels and who's home | **~25 MB** | ~0 | ⭐ easy | ✅ `scripts/08-panel.sh` → `http://<phone-ip>:8080`, see [panel.md](panel.md) |
-| **Cameras in the panel** (go2rtc + ffmpeg) | at home: a still of each camera every ~2.5 s, tap for live video | go2rtc ~20 MB | stills: ~14% of one core for 3 cameras, only while someone looks; live video is passed through, not re-encoded | ⭐⭐ medium | ✅ `scripts/11-cameras.sh` |
-| **Camera recorder** (ffmpeg, RTSP) | record Wi-Fi cameras 24/7 or by schedule | est. 30–60 MB per camera | low (copies the video, doesn't re-encode) | ⭐⭐ medium | 💡 idea; go2rtc from step 11 can feed it |
+| **Cameras in the panel** (go2rtc + ffmpeg) | at home: a still of each camera every few seconds (each full frame the camera sends; ~4 s on the tested cameras), tap for live video | go2rtc ~20 MB | stills: ~14% of one core for 3 cameras on the G24, ~9% on the Edge 40, only while someone looks; live video is passed through, not re-encoded | ⭐⭐ medium | ✅ `scripts/11-cameras.sh` |
+| **Camera recorder** (ffmpeg, RTSP) | motion clips from the step 11 cameras, watchable in the panel | ~130 MB per camera (measured on the Edge 40) | ~22% of one core per camera with the default motion check, ~13% in `light` mode, including go2rtc (Edge 40; more on slower phones) | ⭐⭐ medium | 📐 designed and measured, not built yet |
 | **Jellyfin** ("home Netflix") | movies and shows on the TV/Chromecast | est. 300–500 MB (runs inside a Debian container, `proot-distro`) | fine if the TV plays the file as-is; re-encoding video is too heavy for a phone CPU | ⭐⭐⭐ hard | ⏳ not measured |
 | **Uptime monitor** (e.g. Uptime Kuma) | logs when the internet goes down | est. 80–120 MB | low | ⭐⭐ medium | 💡 idea |
 | **Bots / scripts 24/7** (Python, Node) | Telegram bot, alerts, automations | 20–80 MB each | depends | ⭐–⭐⭐ | 💡 idea |
@@ -41,13 +47,13 @@ With ~3.5–4 GB to spend, all of these fit **together**:
 
 ```
 Minecraft (2 GB with players) + Syncthing + camera recorder (3 cameras) + status panel + NextDNS updater
-≈ 2.0 + 0.05 + 0.15 + 0.02 + 0.003  ≈ 2.3 GB
+≈ 2.0 + 0.05 + 0.4 + 0.02 + 0.003  ≈ 2.5 GB
 ```
 
 Jellyfin (~0.5 GB) also fits on RAM, but avoid using it while kids are playing Minecraft:
 both want the CPU. Storage is the other limit: video recording fills disks fast
-(a 1080p camera stream is roughly 15–40 GB per day), so recorder setups need a retention limit
-or the cameras' lower-resolution sub-stream.
+(recording a 2K camera all day is ~10–15 GB a day; measured 1.0–1.4 Mbit/s), so the planned recorder only
+keeps motion clips and has a size cap.
 
 ## Status panel
 
