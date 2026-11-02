@@ -46,7 +46,8 @@ require_device() {
     adb devices -l >&2
     die "No authorized phone. Enable USB debugging and accept the prompt on the phone (docs/path-a.md, step 0)."
   fi
-  [ "$n" = "1" ] || die "More than one phone connected. Leave only one plugged in."
+  # over Wi-Fi the same phone can show up twice (ip:port and adb-...._adb-tls-connect._tcp)
+  [ "$n" = "1" ] || die "More than one phone connected. Leave only one plugged in (over Wi-Fi: adb disconnect, then connect once)."
 }
 
 # ...so local file paths handed to the Windows adb.exe must be converted by hand

@@ -18,5 +18,5 @@ for ip in "${PHONE_LAN_IP:-}" "${PHONE_TS_IP:-}"; do
 done
 
 echo "Can't reach the panel. Next checks: is the phone on and on Wi-Fi? Then try SSH;"
-echo "if SSH says 'Connection refused', Android stopped Termux: plug the cable and run scripts/restart-server.sh"
+echo "if SSH says 'Connection refused', Android stopped Termux: connect adb (cable or wireless debugging) and run scripts/restart-server.sh"
 exit 1

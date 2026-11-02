@@ -34,6 +34,27 @@ On the phone:
 The script prints the model, Android version, RAM, storage and battery. If `adb devices` shows nothing,
 toggle USB debugging off and on, tap **Revoke USB debugging authorizations**, and replug the cable.
 
+A hand-me-down phone: remove the previous owner's Google account (Settings → Accounts) **before** a
+factory reset, or after the reset it asks for their password and won't let you past setup.
+
+### No USB cable: wireless debugging
+
+If the phone's USB port is broken (or you have no data cable), steps 0–5 also work over Wi-Fi with
+**Wireless debugging** (Android 11+). The phone and the computer must be on the same Wi-Fi.
+
+1. **Developer options** → turn on **Wireless debugging** → tap its name → **Pair device with
+   pairing code**. It shows an `IP:port` and a 6-digit code.
+2. On the computer: `adb pair <IP:port> <code>`.
+3. Back on the Wireless debugging screen, the `IP address & Port` at the top is a *different* port.
+   Run `adb connect <IP:port>` with that one. `adb devices` should list the phone once.
+4. Developer options → turn on **Stay awake**, so the screen doesn't lock while the steps run.
+   Turn it off again after step 5: a screen that's always on heats the phone.
+
+Wireless debugging turns itself off when the phone leaves the Wi-Fi or the screen locks for a
+while, and the port changes each time. If a step says "No authorized phone", turn it back on and
+`adb connect` the new port (no need to pair again). If it says "More than one phone", the same phone
+got connected twice: `adb disconnect`, then `adb connect` once.
+
 ## Step 1: stop Android from killing background programs
 
 `scripts/01-server-settings.sh` (undo with `--revert`)
@@ -74,6 +95,11 @@ You will see this three times (photo from a phone set to Spanish):
 
 Tap the small **"Install anyway"** text. The big **"Got it"** button *cancels* the install.
 
+On newer phones "Install anyway" is hidden: tap **"More details"** first, and it shows up under it
+(left: before, right: after; Motorola Edge 40, Android 15):
+
+<img src="img/play-protect-more-details.jpg" alt="Two Play Protect warnings for Termux, in Spanish. Left: only 'Más detalles' (More details) and the big 'Entendido' (Got it) button. Right, after tapping More details: the small 'Instalar de todas formas' (Install anyway) text appears above Got it." width="430">
+
 **Why it appears:** Termux deliberately targets an older Android version, because newer Android
 versions forbid apps from running programs they download (and running programs is exactly what
 Termux is for). Play Protect flags *that*, not a virus. Termux is open source and the APKs come
@@ -92,7 +118,7 @@ straight from f-droid.org.
    **Leave the phone unlocked and on Termux.** The first launch unpacks Linux, so the script waits ~25 s.
 4. Inside the phone, the bootstrap installs `openssh`, trusts only your key (password login is off),
    holds a *wake lock* so the CPU doesn't sleep, and creates `~/.termux/boot/10-sshd.sh` so SSH comes back after a reboot.
-5. Tests SSH through the USB cable.
+5. Tests SSH through adb (the USB cable, or wireless debugging).
 
 Termux's SSH listens on port **8022**, not 22, because ports under 1024 need root.
 The Termux username looks like `u0_a123`; it gets saved in `local/phone.env`.
@@ -109,8 +135,11 @@ reservation tells it "this phone always gets ticket 50".
 
 On a **TP-Link Archer AX23** (tested): *Advanced → Network → DHCP Server → Address Reservation → Add*, type the MAC in the six boxes and the IP, then press **Tab** (the SAVE button stays grey until the IP field loses focus).
 
-About the MAC address: Android invents a different one for each Wi-Fi network (privacy feature), but it
-stays the same for *your* network, so reserving the one the script shows works fine.
+About the MAC address: Android invents a different one for each Wi-Fi network (privacy feature).
+On many phones it stays the same for *your* network, but some (Motorola Edge 40, Android 15) change
+it now and then, and the reservation stops matching. If the script warns that the MAC is made up,
+the safe choice is: on the phone, **Wi-Fi → your network → Privacy** (or *MAC type*) → **Use device
+MAC**, then run step 4 again and reserve the MAC it shows.
 
 Weak signal (below about −75 dBm) means a flaky server. Move the phone closer to the router.
 
@@ -127,6 +156,13 @@ for personal use. The script opens the Play Store for you. Install it, log in, a
 permission. Then install Tailscale on your computer or other phone with the same account.
 
 The script also sets Tailscale as the **always-on VPN**, so it reconnects after a reboot. The phone needs a Google account signed in to install from the Play Store.
+**Then turn off key expiry**, or the server drops out of Tailscale after 180 days and someone has to
+log it in again by hand: on [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines),
+open the **…** menu on the phone's row → **Disable key expiry**.
+
+If **Log in** does nothing, the phone has no web browser for the login page. Bring Chrome back with
+`adb shell cmd package install-existing com.android.chrome` (running `extra-debloat.sh` again does
+it too; older versions of it removed Chrome).
 
 **After step 5 the server is done.** Steps 6–11 add things to do with it. They work over Wi-Fi, so
 you can unplug the cable, and each one is optional. They read their settings from `.env`
@@ -161,7 +197,14 @@ how much you use. To undo, remove those two DNS servers from the router.
 Minecraft. It runs inside a small Debian on the phone and uses ~300 MB of RAM. Put the player name
 that will be the game's admin in `.env` as `LUANTI_ADMIN` (yours or a kid's). The first run takes a
 few minutes. Players install Luanti (free on Android, Windows, macOS and Linux), pick **Join Game**
-and type the server's IP and port `30000`. Details in [services.md](services.md#luanti-notes-from-the-test).
+and type the server's IP and port `30000` (the first time, **Register** instead of Join). The world
+starts in survival; `LUANTI_CREATIVE=true` turns it into creative (unlimited blocks, flying, no
+dying, no monsters); players who had already joined need the admin to type `/grant <name> fly, fast`
+in the game chat to fly. `LUANTI_GAME=minetest` switches to Minetest Game, and `LUANTI_WORLD` picks
+the world folder in `~/luanti/worlds` (a new name starts a new world). A world keeps the game it was
+made with, so to switch games set a new `LUANTI_WORLD` too (the step refuses otherwise). Re-run the step after
+changing any of these; the other worlds stay on the phone. A world made on a newer Luanti client
+(5.12+) may not open on the server's Luanti 5.10: its map uses a newer database layout. Details in [services.md](services.md#luanti-notes-from-the-test).
 
 ## Step 8: status panel
 
@@ -223,7 +266,8 @@ the small one by itself.
 
 `scripts/extra-debloat.sh` (undo with `--revert`)
 
-Hides preinstalled apps the server doesn't need (Facebook services, games, Chrome…). On the test
+Hides preinstalled apps the server doesn't need (Facebook services, games, YouTube…). It keeps
+Chrome, because Tailscale's login needs a browser. On the test
 phone this freed ~0.8 GB of RAM, and `--revert` brings it all back. Run it without options:
 the script also has a `--user-apps` option that **erases** the apps you installed and their data,
 can't be undone, and is not part of Path A.
@@ -249,7 +293,7 @@ traps the phone inside Termux and blocks the scripts from opening other apps. It
 "kid lock" once the server is finished, but leave it off while setting things up.
 
 To bring it back, just **open Termux**: its startup restarts the server. From the computer, with
-the cable plugged in and the phone unlocked:
+the cable plugged in (or [wireless debugging](#no-usb-cable-wireless-debugging) on) and the phone unlocked:
 
 ```bash
 bash scripts/restart-server.sh
@@ -257,6 +301,15 @@ bash scripts/restart-server.sh
 
 You don't need the screen always on: Termux's wake lock keeps the processor running with the
 screen off, and a screen that's always on heats the phone, which is bad for the battery.
+
+## Moving to a new phone
+
+`scripts/move-server.sh` (nothing is erased on either phone)
+
+When a better phone comes along, the new one takes over with everything the old one had: photos,
+game worlds, settings, smart plug, Syncthing's identity (the family's phones reconnect by
+themselves), the same home address and the same Tailscale address. Nobody else changes anything.
+Step by step: **[docs/new-phone.md](new-phone.md)**.
 
 ## Undoing everything
 

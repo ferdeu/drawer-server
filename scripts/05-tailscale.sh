@@ -9,7 +9,8 @@ load_phone_env
 
 APP=com.tailscale.ipn
 has_app() { adb shell pm list packages "$APP" | grep -q "$APP"; }
-ts_ip() { adb shell ip -4 addr show tun0 2>/dev/null | tr -d '\r' | sed -n 's/.*inet \(100\.[0-9.]*\)\/.*/\1/p'; }
+# the VPN interface is tun0 on some phones, tun1 on others (Edge 40)
+ts_ip() { adb shell ip -4 addr 2>/dev/null | tr -d '\r' | sed -n 's/.*inet \(100\.[0-9.]*\)\/.* tun[0-9]*$/\1/p' | head -1; }
 has_ts_ip() { [ -n "$(ts_ip)" ]; }
 
 if ! has_app; then
@@ -39,6 +40,10 @@ cat <<EOF
   To reach the phone from outside home, install Tailscale on your computer or other phone
   (same account) and use:
      ssh -i ~/.ssh/drawer_server_ed25519 -p 8022 $TERMUX_USER@$TS_IP
+
+  IMPORTANT: Tailscale logs every device out after 180 days, and nobody is there to log the
+  server back in. Open https://login.tailscale.com/admin/machines, find this phone, tap the
+  "..." menu on its row and choose "Disable key expiry".
 EOF
 
 if phone_ssh "$TS_IP" true 2>/dev/null; then

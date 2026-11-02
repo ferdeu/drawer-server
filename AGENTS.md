@@ -17,7 +17,7 @@ You are helping someone turn an old Android phone into a home server with this r
 - Path A never erases or unlocks anything. Keep it that way. **Never** run `fastboot`, `flashing unlock`,
   `oem unlock`, wipe or format commands as part of Path A. If the human wants Path B (unlock / custom ROM),
   stop, explain that it erases the phone, and get explicit confirmation for every destructive command.
-- Step 00 is read-only. If the phone isn't the tested one (`fogorow`), say so and proceed carefully.
+- Step 00 is read-only. If the phone isn't a tested one (`fogorow`, `lyriq`), say so and proceed carefully.
 - Step 2: warn the human **before** running it that Google Play Protect will show "Blocked unsafe app"
   three times and they must tap the small **"Install anyway"** text, not "Got it".
 - Step 3: tell the human to unlock the phone and leave it on Termux; the script types into it.
@@ -47,7 +47,8 @@ The human may name things loosely ("the panel", "the plug", "photos", "the game"
 | Access from outside home | `scripts/05-tailscale.sh` |
 | Wi-Fi, phone IPs | `scripts/04-network.sh`, saved in `local/phone.env` |
 | What runs when the phone boots | `termux/bootstrap.sh` |
-| Server down, SSH "Connection refused" | `scripts/restart-server.sh` (needs the cable) |
+| Server down, SSH "Connection refused" | `scripts/restart-server.sh` (needs adb: the cable or wireless debugging) |
+| Moving the server to a new phone (same data, same IP) | `scripts/move-server.sh` (`save-old` before step 3 on the new phone, `copy`, `switch`); then the router and Tailscale by hand, then `finish`); human guide in `docs/new-phone.md` |
 | Shared helpers (`say`, `wait_for`, `phone_ssh`) | `scripts/lib.sh` |
 | Docs for humans | `README.md`, `docs/path-a.md`, `docs/panel.md`, `docs/services.md`, `docs/concepts.md` |
 
@@ -63,3 +64,8 @@ The human may name things loosely ("the panel", "the plug", "photos", "the game"
 - Git Bash rewrites `/sdcard/...` arguments into Windows paths; `lib.sh` sets `MSYS_NO_PATHCONV=1`
   and uses `localpath` for local files passed to `adb.exe`.
 - `dumpsys` piped into `grep -m1` makes adb fail with "Broken pipe" under `pipefail`; filter on the phone side.
+- No working USB port: steps 0–5 run over wireless debugging (`adb pair`, then `adb connect`; see
+  `docs/path-a.md`). Its port changes whenever it reconnects, and the same phone can show up twice.
+- **Never turn the server's Wi-Fi off remotely** (`termux-wifi-enable false`, `svc wifi`): Android
+  lets a script turn it off but not back on, and the phone is unreachable until someone touches it.
+  To make it pick up a new router reservation, ask the human to toggle Wi-Fi by hand.

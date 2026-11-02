@@ -14,13 +14,20 @@ RSSI="$(sed -n 's/.*RSSI: \(-[0-9]*\).*/\1/p' <<<"$WIFI")"
 
 say "Phone on Wi-Fi"
 echo "  IP address : $IP"
-echo "  MAC address: $MAC   (Android makes up one per network; it stays the same for YOUR network)"
+echo "  MAC address: $MAC"
 echo "  Signal     : ${RSSI} dBm   (-50 great, -67 fine, below -75 move the phone closer to the router)"
+# second hex digit 2, 6, a or e = a made-up "private" MAC; some phones (Edge 40, Android 15)
+# change it now and then on the same network, and the router reservation stops matching
+case "${MAC:1:1}" in
+  [26aeAE]) warn "That MAC is made up by Android for privacy. Some phones change it now and then, and the
+    reservation below stops working. Safer: on the phone, Wi-Fi > your network > Privacy (or MAC type) >
+    Use device MAC. It reconnects; then run this step again." ;;
+esac
 
 say "Testing SSH over Wi-Fi"
 phone_ssh "$IP" 'echo "  ok - $(whoami) on $(getprop ro.product.model)"'
 
-{ grep -v '^PHONE_LAN_IP=' "$REPO_ROOT/local/phone.env"; echo "PHONE_LAN_IP=$IP"; } > "$REPO_ROOT/local/phone.env.tmp"
+{ grep -vE '^PHONE_(LAN_IP|MAC)=' "$REPO_ROOT/local/phone.env"; echo "PHONE_LAN_IP=$IP"; echo "PHONE_MAC=$MAC"; } > "$REPO_ROOT/local/phone.env.tmp"
 mv "$REPO_ROOT/local/phone.env.tmp" "$REPO_ROOT/local/phone.env"
 
 say "Now give it a fixed address in your router (DHCP reservation)"

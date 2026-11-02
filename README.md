@@ -32,7 +32,8 @@ setting can be undone ([how](docs/path-a.md#undoing-everything)).
 
 - An Android phone with **Android 11 or newer**; 4 GB of RAM or more is comfortable.
 - Its **charger**: it stays plugged in.
-- A **USB cable that carries data** (some cheap ones only charge).
+- A **USB cable that carries data** (some cheap ones only charge). Broken USB port? Steps 0–5
+  also work over Wi-Fi ([wireless debugging](docs/path-a.md#no-usb-cable-wireless-debugging)).
 - A **computer**: Windows with [Git Bash](https://git-scm.com/download/win), macOS or Linux. Only for setup.
 - **Home Wi-Fi** and the password of your **router's admin page**, to give the phone a fixed address.
 - A **Google account** on the phone (to install Tailscale from the Play Store) and a free
@@ -101,7 +102,7 @@ devices on your Wi-Fi, printer ink), follow [docs/panel.md](docs/panel.md).
 ## If something goes wrong
 
 - **A step failed:** fix what it says and resume with `bash setup.sh <step>`. Every step is safe to re-run.
-- **SSH says "Connection refused":** Termux was closed. Open it on the phone, or plug the cable in
+- **SSH says "Connection refused":** Termux was closed. Open it on the phone, or plug the cable in (or turn on wireless debugging)
   and run `bash scripts/restart-server.sh` ([why it happens](docs/path-a.md#if-the-server-stops-connection-refused)).
 - **Something else:** open an issue with the step and the error.
 
@@ -110,6 +111,7 @@ devices on your Wi-Fi, printer ink), follow [docs/panel.md](docs/panel.md).
 | Phone | Android | Result |
 |---|---|---|
 | Motorola **Moto G24 Power** (XT2425-1, `fogorow`, MediaTek Helio G85, 8 GB RAM) | 14 | ✅ steps 0–11 working |
+| Motorola **Edge 40** (XT2303-2, `lyriq`, MediaTek Dimensity 8020, 8 GB RAM) | 15 | ✅ steps 0–11 working, set up over Wi-Fi (broken USB port); took over from the G24 with `move-server.sh` |
 
 It uses only standard Android features, so it should work on most phones with **Android 11 or newer**.
 If you try another phone, please open an issue or PR with your results.
@@ -120,8 +122,11 @@ If you try another phone, please open an issue or PR with your results.
 - [docs/panel.md](docs/panel.md): the status panel, from zero to your own.
 - [docs/services.md](docs/services.md): what else fits on the phone, with measured RAM and CPU.
 - [docs/concepts.md](docs/concepts.md): the ideas in plain words (adb, Termux, SSH, CGNAT, root…).
-- [docs/devices/moto-g24-power.md](docs/devices/moto-g24-power.md): notes for the tested phone,
+- [docs/devices/](docs/devices/): notes for the tested phones
+  ([Moto G24 Power](docs/devices/moto-g24-power.md), [Edge 40](docs/devices/motorola-edge-40.md)),
   including "Path B" (unlocking and a custom ROM, which erases the phone; not scripted here).
+- [docs/new-phone.md](docs/new-phone.md): moving the server to a new phone with everything on it,
+  same addresses and all, so nobody else has to change anything.
 
 ## What's next
 

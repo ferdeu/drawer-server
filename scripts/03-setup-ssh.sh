@@ -58,6 +58,9 @@ case "$(status)" in *ready*) ;; *) die "Timed out waiting for Termux. Look at th
 TUSER="$(status | sed -n 's/.*ready user=\([^ ]*\).*/\1/p')"
 say "Testing SSH over the USB cable (adb forward 8022)"
 adb forward tcp:8022 tcp:8022 >/dev/null
+# every phone has its own SSH fingerprint and they all show up here as 127.0.0.1:8022: forget the
+# previous phone's (we're talking to this one through adb, so it's the right one)
+ssh-keygen -R "[127.0.0.1]:8022" >/dev/null 2>&1 || true
 ssh -i "$KEY" -p 8022 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
   "$TUSER@127.0.0.1" 'echo "Hello from $(uname -m) Termux, $(nproc) CPU cores, uptime: $(uptime)"'
 

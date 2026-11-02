@@ -11,8 +11,8 @@
 #
 # Preinstalled apps are removed with "pm uninstall -k --user 0": the app stays in the system
 # image, just hidden and stopped for your user, so --revert (or a factory reset) restores it.
-# Kept on purpose: Google Play services + Play Store (they update Tailscale), WebView (Tailscale
-# login), the keyboard, Motorola system updates, and everything the system needs to boot.
+# Kept on purpose: Google Play services + Play Store (they update Tailscale), Chrome (Tailscale's
+# login button opens a browser; without one it does nothing), the keyboard, Motorola system updates, and everything the system needs to boot.
 source "$(dirname "$0")/lib.sh"
 
 require_device
@@ -23,11 +23,14 @@ BLOAT="
 com.facebook.appmanager com.facebook.services com.facebook.system
 com.inmobi.installer com.aura.oobe.motorola com.dti.motorola com.taboola.ody com.digitalturbine.ignite
 com.lenovo.lsf.user
+com.taboola.mip com.amazon.appmanager com.dti.amx com.aura.oobe.deutsche de.telekom.tsc com.motorola.brapps
+com.motorola.spaces com.motorola.android.fmradio com.motorola.audiorecorder com.motorola.mobiledesktop
+com.motorola.motcameradesktop com.google.android.apps.subscriptions.red
 com.motorola.timeweatherwidget com.motorola.motocare com.motorola.genie com.motorola.help
 com.motorola.demo com.motorola.gamemode com.motorola.livewallpaper3 com.motorola.motocit
 com.ape.fmradio com.ape.soundrecorder com.ape.personalize com.ape.faceunlock com.myos.camera
 com.goodix.gftest com.fingerprints.sensortesttool
-com.android.chrome com.google.android.googlequicksearchbox com.google.android.apps.googleassistant
+com.google.android.googlequicksearchbox com.google.android.apps.googleassistant
 com.google.android.apps.maps com.google.android.apps.messaging com.google.android.apps.docs
 com.google.android.apps.photos com.google.android.apps.tachyon com.google.android.apps.turbo
 com.google.android.apps.wellbeing com.google.android.apps.youtube.music com.google.android.youtube
@@ -41,10 +44,12 @@ com.google.android.printservice.recommendation com.google.android.apps.carrier.c
 com.google.android.apps.safetyhub com.google.android.tts com.google.android.contacts com.google.android.dialer
 "
 KEEP_USER_APPS='^(com\.termux|com\.termux\.boot|com\.termux\.api|com\.tailscale\.ipn)$'
+# older versions of this script removed Chrome; Tailscale's login needs it, so bring it back
+KEEP_SYSTEM_APPS="com.android.chrome"
 
 if [ "${1:-}" = "--revert" ]; then
   say "Restoring preinstalled apps"
-  for p in $BLOAT; do adb shell cmd package install-existing "$p" >/dev/null 2>&1 && echo "  restored $p"; done
+  for p in $BLOAT $KEEP_SYSTEM_APPS; do adb shell cmd package install-existing "$p" >/dev/null 2>&1 && echo "  restored $p"; done
   exit 0
 fi
 
@@ -62,6 +67,8 @@ if [ "${1:-}" = "--user-apps" ]; then
     printf '  %-50s %s\n' "$p" "$(adb shell pm uninstall "$p" | tr -d '\r')"
   done
 fi
+
+for p in $KEEP_SYSTEM_APPS; do adb shell cmd package install-existing "$p" >/dev/null 2>&1 || true; done
 
 say "Removing preinstalled bloat (reversible with --revert)"
 installed="$(adb shell pm list packages | tr -d '\r' | sed 's/package://')"

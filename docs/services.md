@@ -70,7 +70,7 @@ What it shows, which cards you can add and how to set them up: [panel.md](panel.
 - Runs inside Debian 13 (`proot-distro`), Luanti 5.10 server; a 5.17 Windows client connected fine.
 - A player's **first** join downloads all the game's textures, which takes a minute or two on Wi-Fi.
   Later joins are quick.
-- The world lives in `~/luanti/worlds/casa` in Termux. Copy that folder to back it up.
+- The world lives in `~/luanti/worlds/casa` in Termux (or the folder set in `LUANTI_WORLD`). Copy that folder to back it up.
 
 ## Minecraft notes (from the test)
 

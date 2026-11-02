@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bring the server back if Android force-stopped Termux (SSH says "Connection refused").
-# Needs the USB cable and the phone unlocked.
+# Needs the USB cable (or wireless debugging) and the phone unlocked.
 source "$(dirname "$0")/lib.sh"
 
 require_device
