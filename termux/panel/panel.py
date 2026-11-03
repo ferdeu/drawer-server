@@ -906,21 +906,22 @@ PAGE = """<!doctype html>
   details[open] > summary::after { transform:rotate(90deg); }
   .right { margin-left:auto; text-align:right; }
   /* internet: what the dish says now | the last speed test, each under its own small heading */
-  .net { display:grid; grid-template-columns:auto auto 1fr; grid-template-areas:"a b ." "fa fb ."; gap:0 24px; margin-top:8px; }
-  .net .a { grid-area:a; } .net .b { grid-area:b; } .net .foot-a { grid-area:fa; } .net .foot-b { grid-area:fb; }
+  .net { display:grid; grid-template-columns:auto auto 1fr; grid-template-areas:"a b ." "f f f"; gap:0 24px; margin-top:8px; }
+  /* Details takes the whole last row (opened, its notes use the full width); the test's time sits on top of it,
+     level with "Details" and under the speed test */
+  .net .a { grid-area:a; } .net .b { grid-area:b; } .net .foot-a { grid-area:f; } .net .foot-b { grid-row:f; grid-column:2; }
   .net .b { border-left:1px solid var(--soft); padding-left:24px; }
   .net .foot-b { padding-left:24px; }  /* lines up with the speed test above it */
   .net:has(> .a.hidden) :is(.b, .foot-b) { border-left:0; padding-left:0; }
   .net .b .stats { align-items:center; }
   .net .foot-b:not(.hidden) { display:flex; align-items:center; align-self:start; min-height:34px; }  /* level with "Details" */
   .net details { border:0; }
-  .net details > .more { contain:inline-size; }  /* its long notes wrap instead of widening the column */
-  .net:has(> .a.hidden) { grid-template-areas:"b b ." "fa fb ."; }
+  .net:has(> .a.hidden) { grid-template-areas:"b b ." "f f f"; }
   .hd2 { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
   @media (max-width:599px) {
-    .net { grid-template-columns:auto 1fr; grid-template-areas:"a a" "b b" "fa fb"; }
+    .net { grid-template-columns:auto 1fr; grid-template-areas:"a a" "b b" "f f"; }
     .net .b { border-left:0; padding-left:0; border-top:1px solid var(--soft); padding-top:10px; margin-top:10px; }
-    .net:has(> .a.hidden) { grid-template-areas:"b b" "fa fb"; }
+    .net:has(> .a.hidden) { grid-template-areas:"b b" "f f"; }
     .net:has(> .a.hidden) .b { border-top:0; padding-top:0; margin-top:0; }
     .net .b .stats { column-gap:14px; }
     .net .foot-b { justify-content:flex-end; padding-left:0; }
