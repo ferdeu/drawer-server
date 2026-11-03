@@ -165,6 +165,30 @@ class ClipStore:
             return False
         return True
 
+    # --- deleting from the panel: clips and thumbnails only, never a part being recorded ---
+
+    def _delete(self, folder, day, names):
+        sizes = {n: size for n, _, size in self._files(folder, day, (CLIP, THUMB))}
+        out = {"clips": 0, "bytes": 0}
+        for name in names:
+            if name in sizes and self._remove(folder, day, name, (CLIP, THUMB)):
+                out["clips"] += bool(CLIP.fullmatch(name))
+                out["bytes"] += sizes[name]
+        if out["bytes"]:
+            self._rmdir(self.root / folder / day)
+            self._rmdir(self.root / folder)
+        return out
+
+    def delete_clip(self, folder, day, name):
+        """A clip and its thumbnail: {"clips": 0|1, "bytes": n}."""
+        if not CLIP.fullmatch(name):
+            return {"clips": 0, "bytes": 0}
+        return self._delete(folder, day, (name, name[:-4] + ".jpg"))
+
+    def delete_day(self, folder, day):
+        """Every clip and thumbnail of one camera's day; part and remux files stay."""
+        return self._delete(folder, day, [n for n, _, _ in self._files(folder, day, (CLIP, THUMB))])
+
     # --- reading side ---
 
     def cameras(self):
@@ -180,12 +204,12 @@ class ClipStore:
         return any(self._files(folder, day, (CLIP,)) for folder in self._folders() for day in self._days(folder))
 
     def clips(self, folder, day):
-        thumbs = {n[:-4] for n, _, _ in self._files(folder, day, (THUMB,))}
+        thumbs = {n[:-4]: size for n, _, size in self._files(folder, day, (THUMB,))}
         rows = []
-        for n, m, _ in self._files(folder, day, (CLIP,)):
+        for n, m, size in self._files(folder, day, (CLIP,)):
             t = m.group(1)
             rows.append({"file": n, "time": f"{t[:2]}:{t[2:4]}:{t[4:]}", "len": int(m.group(2)),
-                         "thumb": n[:-4] in thumbs})
+                         "thumb": n[:-4] in thumbs, "bytes": size + thumbs.get(n[:-4], 0)})
         return sorted(rows, key=lambda r: r["file"], reverse=True)
 
     def count(self, camera, day):

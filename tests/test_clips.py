@@ -71,8 +71,8 @@ class ClipsTest(unittest.TestCase):
         for n in ("143005-42.mp4", "143005-42.jpg", "150000-8.mp4", "junk.txt", "160000.part.mp4"):
             touch(d / n)
         self.assertEqual(self.store.clips("Entrada", "2026-10-31"), [
-            {"file": "150000-8.mp4", "time": "15:00:00", "len": 8, "thumb": False},
-            {"file": "143005-42.mp4", "time": "14:30:05", "len": 42, "thumb": True}])
+            {"file": "150000-8.mp4", "time": "15:00:00", "len": 8, "thumb": False, "bytes": 1},
+            {"file": "143005-42.mp4", "time": "14:30:05", "len": 42, "thumb": True, "bytes": 2}])
         self.assertEqual(self.store.clips("..", "2026-10-31"), [])
         self.assertEqual(self.store.clips("Entrada", "../x"), [])
         self.assertEqual(self.store.count("Entrada", "2026-10-31"), 2)
@@ -152,6 +152,53 @@ class ClipsTest(unittest.TestCase):
             self.assertTrue(f.exists(), f)
         self.assertTrue(os.path.islink(self.root / "Fondo"))
         self.assertTrue(os.path.islink(self.root / "Entrada" / "2026-10-31"))
+
+    def test_delete_clip(self):
+        d = self.root / "Entrada" / "2026-10-31"
+        touch(d / "143005-42.mp4", 1000), touch(d / "143005-42.jpg", 5), touch(d / "150000-8.mp4")
+        self.assertEqual(self.store.delete_clip("Entrada", "2026-10-31", "143005-42.mp4"), {"clips": 1, "bytes": 1005})
+        self.assertEqual(sorted(p.name for p in d.iterdir()), ["150000-8.mp4"])
+        self.assertEqual(self.store.delete_clip("Entrada", "2026-10-31", "143005-42.mp4"), {"clips": 0, "bytes": 0})
+
+    def test_delete_clip_not_a_clip(self):
+        d = self.root / "Entrada" / "2026-10-31"
+        keep = [touch(d / n) for n in ("160000.part.mp4", "x.txt", "143005-42.jpg")]
+        touch(self.root / "secret-1.mp4")
+        for folder, day, name in (("Entrada", "2026-10-31", "160000.part.mp4"), ("Entrada", "2026-10-31", "x.txt"),
+                                  ("Entrada", "2026-10-31", "143005-42.jpg"), ("..", "2026-10-31", "143005-42.mp4"),
+                                  ("Entrada", "..", "secret-1.mp4"), ("Entrada", "2026-10-31", "../../secret-1.mp4")):
+            self.assertEqual(self.store.delete_clip(folder, day, name), {"clips": 0, "bytes": 0})
+        for f in keep + [self.root / "secret-1.mp4"]:
+            self.assertTrue(f.exists(), f)
+
+    def test_delete_day_keeps_part(self):
+        d = self.root / "Entrada" / "2026-10-31"
+        for n in ("143005-42.mp4", "143005-42.jpg", "150000-8.mp4", "160000.part.mp4", "170000.remux.mp4", "note.txt"):
+            touch(d / n, 10)
+        self.assertEqual(self.store.delete_day("Entrada", "2026-10-31"), {"clips": 2, "bytes": 30})
+        self.assertEqual(sorted(p.name for p in d.iterdir()), ["160000.part.mp4", "170000.remux.mp4", "note.txt"])
+
+    def test_delete_day_removes_empty_folders(self):
+        touch(self.root / "Entrada" / "2026-10-31" / "143005-42.mp4")
+        touch(self.root / "Fondo" / "2026-10-31" / "143005-42.mp4")
+        self.assertEqual(self.store.delete_day("Entrada", "2026-10-31"), {"clips": 1, "bytes": 1})
+        self.assertFalse((self.root / "Entrada").exists())
+        self.assertTrue((self.root / "Fondo" / "2026-10-31" / "143005-42.mp4").exists())
+        self.assertEqual(self.store.delete_day("Entrada", "2026-10-31"), {"clips": 0, "bytes": 0})
+        self.assertEqual(self.store.delete_day("..", "2026-10-31"), {"clips": 0, "bytes": 0})
+
+    def test_delete_through_symlinked_day_refused(self):
+        outside = Path(self._tmp.name) / "outside"
+        files = [touch(outside / n) for n in ("090000-10.mp4", "090000-10.jpg")]
+        (self.root / "Entrada").mkdir()
+        try:
+            os.symlink(outside, self.root / "Entrada" / "2026-10-31")
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks here")
+        self.store.delete_day("Entrada", "2026-10-31")
+        self.store.delete_clip("Entrada", "2026-10-31", "090000-10.mp4")
+        for f in files:
+            self.assertTrue(f.exists(), f)
 
     def test_has_clips(self):
         self.assertFalse(self.store.has_clips())
