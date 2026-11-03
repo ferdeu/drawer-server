@@ -69,7 +69,7 @@ Using an AI coding agent? Point it at [AGENTS.md](AGENTS.md) and it can drive th
 
 ## The steps
 
-`bash setup.sh` runs steps 0 to 8 in order. Steps 9 to 11 are separate commands you run when you're ready.
+`bash setup.sh` runs steps 0 to 8 in order. Steps 9 to 12 are separate commands you run when you're ready.
 
 | Step | What it does | | What you do on the phone |
 |---|---|---|---|
@@ -85,6 +85,7 @@ Using an AI coding agent? Point it at [AGENTS.md](AGENTS.md) and it can drive th
 | 9 | Photo backup: `bash scripts/09-syncthing.sh <name>`, once per person | optional | on *their* phone: install Syncthing-Fork, scan a QR |
 | 10 | Charge between 30 and 80%: `bash scripts/10-smart-plug.sh` | optional | nothing; pair the plug in Smart Life first |
 | 11 | Security cameras in the panel, at home: `bash scripts/11-cameras.sh` | optional, skipped without `PANEL_CAMERAS` in `.env` | nothing |
+| 12 | Motion recording for those cameras: `bash scripts/12-recorder.sh` (runs warmer, [read this first](docs/path-a.md#heat-and-load-read-this-before-leaving-it-on)) | optional, off unless `RECORDER=yes` in `.env`, needs step 11 | nothing |
 
 From step 6 on, everything goes over Wi-Fi: the cable is only needed for steps 0–5.
 [docs/path-a.md](docs/path-a.md) explains each step and why.
@@ -130,8 +131,7 @@ If you try another phone, please open an issue or PR with your results.
 
 ## What's next
 
-Ideas not built yet: recording the home's Wi-Fi cameras, a Minecraft Java server, Jellyfin (movies
-on the TV). See [docs/services.md](docs/services.md) for what fits.
+Ideas not built yet: a Minecraft Java server, Jellyfin (movies on the TV). See [docs/services.md](docs/services.md) for what fits.
 
 ## Repo layout
 

@@ -310,5 +310,341 @@ class RoutesTest(unittest.TestCase):
         self.assertIn("javascript", headers["Content-Type"])
 
 
+class RecordingsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), panel.Handler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.server.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        self.saved = panel.STORE, panel.REC_BOOT, panel.REC_STATE, panel.CONFIG, panel.is_home
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.day = time.strftime("%Y-%m-%d")
+        self.data = bytes(range(250)) * 4  # 1000 known bytes
+        self.clip_dir = root / "recordings" / "Entrada" / self.day
+        self.clip_dir.mkdir(parents=True)
+        (self.clip_dir / "143005-42.mp4").write_bytes(self.data)
+        (self.clip_dir / "143005-42.jpg").write_bytes(b"\xff\xd8jpeg")
+        (root / "config").mkdir()
+        (root / "boot").mkdir()
+        panel.STORE = panel.ClipStore(root / "recordings")
+        panel.CONFIG = root / "config"
+        panel.REC_BOOT = root / "boot" / "70-recorder.sh"
+        panel.REC_BOOT.write_text("x")
+        panel.REC_STATE = root / "recorder.json"
+        panel.is_home = lambda ip: True
+        panel._rec_any["t"] = 0.0  # each test has its own clips
+        self.root = root
+
+    def tearDown(self):
+        panel.STORE, panel.REC_BOOT, panel.REC_STATE, panel.CONFIG, panel.is_home = self.saved
+        self.tmp.cleanup()
+
+    def fetch(self, path, headers=None):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(self.base + path, headers=headers or {}), timeout=10) as r:
+                return r.status, r.read(), r.headers
+        except urllib.error.HTTPError as e:
+            return e.code, b"", e.headers
+
+    def routes(self):
+        return ["/api/recordings", f"/api/recordings/Entrada/{self.day}", f"/rec/Entrada/{self.day}/143005-42.mp4"]
+
+    def write_state(self, age=0, **extra):
+        state = {"time": int(time.time()) - age, "bytes": 5, "disk_full": False,
+                 "cameras": [{"name": "Lateral", "n": 2, "state": "paused", "obstructed": "moving",
+                              "last_motion": 0, "last_frame": 0, "today": 3},
+                             {"name": "Fondo", "n": 3, "state": "off", "obstructed": None,
+                              "last_motion": 0, "last_frame": 0, "today": 4}]}
+        state.update(extra)
+        panel.REC_STATE.write_text(json.dumps(state))
+
+    def test_list_and_day(self):
+        cams = json.loads(self.fetch("/api/recordings")[1])["cameras"]
+        self.assertEqual([(c["name"], c["days"]) for c in cams], [("Entrada", [self.day])])
+        clips = json.loads(self.fetch(f"/api/recordings/Entrada/{self.day}")[1])["clips"]
+        self.assertEqual(clips, [{"file": "143005-42.mp4", "time": "14:30:05", "len": 42, "thumb": True}])
+
+    def test_file_and_range(self):
+        url = f"/rec/Entrada/{self.day}/143005-42.mp4"
+        code, body, h = self.fetch(url)
+        self.assertEqual((code, body, h["Accept-Ranges"], h["Content-Type"]), (200, self.data, "bytes", "video/mp4"))
+        code, body, h = self.fetch(url, {"Range": "bytes=0-1"})
+        self.assertEqual((code, body, h["Content-Range"]), (206, self.data[:2], "bytes 0-1/1000"))
+        code, body, h = self.fetch(url, {"Range": "bytes=990-"})
+        self.assertEqual((code, body, h["Content-Range"]), (206, self.data[990:], "bytes 990-999/1000"))
+        code, body, h = self.fetch(url, {"Range": "bytes=-5"})
+        self.assertEqual((code, body, h["Content-Range"]), (206, self.data[-5:], "bytes 995-999/1000"))
+        code, body, h = self.fetch(url, {"Range": "bytes=5000-"})
+        self.assertEqual((code, h["Content-Range"]), (416, "bytes */1000"))
+        code, body, h = self.fetch(f"/rec/Entrada/{self.day}/143005-42.jpg")
+        self.assertEqual((code, h["Content-Type"]), (200, "image/jpeg"))
+
+    def test_away_and_other_site(self):
+        panel.is_home = lambda ip: False
+        for path in self.routes():
+            self.assertEqual(self.fetch(path)[0], 403, path)
+        panel.is_home = lambda ip: True
+        for path in self.routes():
+            self.assertEqual(self.fetch(path, {"Origin": "http://evil.example"})[0], 403, path)
+            self.assertEqual(self.fetch(path)[0], 200, path)
+
+    def test_hidden(self):
+        (panel.CONFIG / "panel-recordings").write_text("show=no\n")
+        for path in self.routes():
+            self.assertEqual(self.fetch(path)[0], 404, path)
+        self.assertIsNone(json.loads(self.fetch("/api/status")[1])["recordings"])
+
+    def test_encoded_folder(self):
+        d = self.root / "recordings" / "Patio%20trasero" / self.day
+        d.mkdir(parents=True)
+        (d / "090000-10.mp4").write_bytes(b"abc")
+        cams = json.loads(self.fetch("/api/recordings")[1])["cameras"]
+        self.assertIn("Patio trasero", [c["name"] for c in cams])
+        code, body, _ = self.fetch(f"/rec/Patio%2520trasero/{self.day}/090000-10.mp4")
+        self.assertEqual((code, body), (200, b"abc"))
+        code, body, _ = self.fetch(f"/api/recordings/Patio%2520trasero/{self.day}")
+        self.assertEqual(code, 200)
+
+    def test_path_tricks(self):
+        (self.clip_dir / "143005.part.mp4").write_bytes(b"x")
+        (self.root / "secret.mp4").write_bytes(b"secret")
+        try:
+            (self.clip_dir / "150000-5.mp4").symlink_to(self.root / "secret.mp4")
+        except OSError:
+            self.skipTest("no symlinks")
+        for path in (f"/rec/..%2F/{self.day}/143005-42.mp4", f"/rec/Entrada/{self.day}/../../x",
+                     "/rec/Entrada/2026-1-1/143005-42.mp4", f"/rec/Entrada/{self.day}/143005.part.mp4",
+                     f"/rec/Entrada/{self.day}/150000-5.mp4", f"/rec/Entrada/{self.day}/nothing-1.mp4"):
+            self.assertEqual(self.fetch(path)[0], 404, path)
+
+    def test_status_recorder(self):
+        self.write_state()
+        s = json.loads(self.fetch("/api/status")[1])
+        self.assertEqual(s["recorder"], {"stale": False, "disk_full": False, "bytes": 5, "today": 7, "cameras": [
+            {"name": "Lateral", "state": "paused", "obstructed": "moving"},
+            {"name": "Fondo", "state": "off", "obstructed": None}]})
+        self.assertIn({"name": "Recorder", "ok": True}, s["services"])
+        self.assertEqual(s["recordings"], {"home": True})
+        self.write_state(age=120)
+        s = json.loads(self.fetch("/api/status")[1])
+        self.assertTrue(s["recorder"]["stale"])
+        self.assertIn({"name": "Recorder", "ok": False}, s["services"])
+        panel.REC_STATE.write_text("{not json")
+        self.assertTrue(json.loads(self.fetch("/api/status")[1])["recorder"]["stale"])
+        panel.REC_STATE.unlink()
+        self.assertTrue(json.loads(self.fetch("/api/status")[1])["recorder"]["stale"])
+        panel.REC_BOOT.unlink()
+        s = json.loads(self.fetch("/api/status")[1])
+        self.assertIsNone(s["recorder"])
+        self.assertNotIn("Recorder", [v["name"] for v in s["services"]])
+
+    def test_recorder_off_clips_kept_no_walk_each_poll(self):
+        # step 12 turned off but clips kept: still shown, without walking every clip on each poll
+        panel.REC_BOOT.unlink()
+        calls = []
+        real = panel.STORE.has_clips
+        panel.STORE.has_clips = lambda: calls.append(1) or real()
+        panel.STORE.cameras = lambda: self.fail("status walked every clip")
+        for _ in range(3):
+            self.assertEqual(json.loads(self.fetch("/api/status")[1])["recordings"], {"home": True})
+        self.assertEqual(self.fetch(f"/rec/Entrada/{self.day}/143005-42.jpg")[0], 200)
+        self.assertEqual(len(calls), 1)  # asked once, then cached
+        panel._rec_any["t"] -= 120  # a minute later it asks again
+        (self.clip_dir / "143005-42.mp4").unlink()
+        self.assertIsNone(json.loads(self.fetch("/api/status")[1])["recordings"])
+        self.assertEqual(len(calls), 2)
+
+    def test_status_disk_full(self):
+        self.write_state(disk_full=True)
+        self.assertTrue(json.loads(self.fetch("/api/status")[1])["recorder"]["disk_full"])
+
+
+class DiskTest(unittest.TestCase):
+    def setUp(self):
+        self.saved = (panel.CONFIG, panel.BACKUP_PAUSED, panel.backup_bytes, panel.recordings_bytes, panel.shutil.disk_usage)
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        panel.CONFIG = root
+        panel.BACKUP_PAUSED = root / "backup-paused.json"
+        panel.shutil.disk_usage = lambda p: type("U", (), {"total": 100_000_000_000, "used": 0, "free": 40_000_000_000})()
+        self.root = root
+        self.measures(20e9, 3.1e9)
+
+    def tearDown(self):
+        panel.CONFIG, panel.BACKUP_PAUSED, panel.backup_bytes, panel.recordings_bytes, panel.shutil.disk_usage = self.saved
+        self.tmp.cleanup()
+
+    def measures(self, backup, recordings):
+        panel.backup_bytes = lambda: backup
+        panel.recordings_bytes = lambda: recordings
+
+    def test_pause_plan(self):
+        plan = panel.backup_pause_plan
+        self.assertEqual(plan(60, 50, True, {"a": False}, set()), ({"a"}, set()))
+        self.assertEqual(plan(48, 50, True, {"a": True}, {"a"}), (set(), set()))  # between 95 and 100%
+        self.assertEqual(plan(47, 50, True, {"a": True}, {"a"}), (set(), {"a"}))
+        self.assertEqual(plan(60, 50, False, {"a": True}, {"a"}), (set(), {"a"}))  # setting turned off
+        self.assertEqual(plan(60, None, True, {"a": True}, {"a"}), (set(), {"a"}))  # no share
+        self.assertEqual(plan(10, 50, False, {"b": True}, set()), (set(), set()))  # a person's pause stays
+        self.assertEqual(plan(60, 50, True, {"a": True, "b": False}, {"a"}), ({"b"}, set()))
+
+    def test_disk_rows(self):
+        (self.root / "disk").write_text("backup_gb=50\n")
+        d = panel.disk()
+        self.assertEqual(d["kinds"], [{"kind": "backup", "gb": 20.0, "share_gb": 50.0},
+                                      {"kind": "recordings", "gb": 3.1, "share_gb": 10.0}])
+        self.assertEqual((d["total_gb"], d["free_gb"], d["warn"]), (100.0, 40.0, None))
+
+    def test_no_share_is_size_only(self):
+        self.assertEqual(panel.disk()["kinds"][0], {"kind": "backup", "gb": 20.0, "share_gb": None})
+
+    def test_recordings_at_cap_no_warning(self):
+        (self.root / "disk").write_text("backup_gb=50\n")
+        self.measures(5e9, 10e9)  # recordings share is 10% of 100 GB
+        self.assertIsNone(panel.disk()["warn"])
+
+    def test_backup_near(self):
+        (self.root / "disk").write_text("backup_gb=50\n")
+        self.measures(46e9, 3e9)
+        self.assertEqual(panel.disk()["warn"], "near")
+        panel.BACKUP_PAUSED.write_text('["a"]')
+        self.assertEqual(panel.disk()["warn"], "paused")
+
+    def test_kind_missing(self):
+        self.measures(None, 3e9)
+        self.assertEqual([k["kind"] for k in panel.disk()["kinds"]], ["recordings"])
+
+    def test_paused_file_unreadable_is_empty(self):
+        panel.BACKUP_PAUSED.write_text("{not json")
+        self.assertEqual(panel.paused_by_us(), set())
+
+
+class BackupKeeperTest(unittest.TestCase):
+    """backup() with Syncthing's HTTP layer replaced: pauses and resumes only what it should."""
+
+    def setUp(self):
+        self.saved = (panel.CONFIG, panel.BACKUP_PAUSED, panel.SYNCTHING_CONFIG, panel.urllib.request.urlopen,
+                      panel.shutil.disk_usage)
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        panel.CONFIG = root
+        panel.BACKUP_PAUSED = root / "backup-paused.json"
+        panel.SYNCTHING_CONFIG = root / "config.xml"
+        panel.SYNCTHING_CONFIG.write_text("<apikey>k</apikey>")
+        panel.shutil.disk_usage = lambda p: type("U", (), {"total": 100_000_000_000, "used": 0, "free": 40_000_000_000})()
+        (root / "disk").write_text("backup_gb=50\nbackup_pause=yes\n")
+        self.local = {"a": 60e9, "b": 0}
+        self.paused = {"a": False, "b": True}  # b was paused by a person
+        self.patched, self.down, self.timeout_after_apply = [], False, False
+        panel.urllib.request.urlopen = self.fake
+
+    def tearDown(self):
+        (panel.CONFIG, panel.BACKUP_PAUSED, panel.SYNCTHING_CONFIG, panel.urllib.request.urlopen,
+         panel.shutil.disk_usage) = self.saved
+        self.tmp.cleanup()
+
+    def fake(self, req, timeout=None):
+        import io
+        path = req.full_url.split("8384", 1)[1]
+        if req.get_method() == "PATCH":
+            if self.down:
+                raise urllib.error.URLError("down")
+            fid = path.rsplit("/", 1)[1]
+            self.assertEqual(req.headers["X-api-key"], "k")
+            body = json.loads(req.data)
+            self.patched.append((fid, body["paused"]))
+            self.paused[fid] = body["paused"]
+            if self.timeout_after_apply:
+                raise TimeoutError("timed out")
+            return io.BytesIO(b"{}")
+        if path == "/rest/system/status":
+            out = {"myID": "ME"}
+        elif path == "/rest/config/devices":
+            out = []
+        elif path == "/rest/system/connections":
+            out = {"connections": {}, "total": {"inBytesTotal": 0}}
+        elif path == "/rest/config/folders":
+            out = [{"id": i, "label": i, "devices": [], "paused": p} for i, p in self.paused.items()]
+        else:
+            fid = path.split("folder=")[1]
+            out = {"globalBytes": 1, "needBytes": 0, "needFiles": 0, "localBytes": int(self.local[fid])}
+        return io.BytesIO(json.dumps(out).encode())
+
+    def test_pauses_at_share_and_resumes_only_its_own(self):
+        result = panel.backup()
+        self.assertEqual(self.patched, [("a", True)])
+        self.assertEqual(panel.paused_by_us(), {"a"})
+        self.assertEqual(result["local_bytes"], 60_000_000_000)
+        self.local["a"] = 40e9  # photos got deleted: under 95%
+        panel.backup()
+        self.assertEqual(self.patched, [("a", True), ("a", False)])
+        self.assertEqual(panel.paused_by_us(), set())
+        self.assertTrue(self.paused["b"])  # a person's pause is never touched
+
+    def test_setting_off_resumes(self):
+        panel.backup()
+        (panel.CONFIG / "disk").write_text("backup_gb=50\n")
+        panel.backup()
+        self.assertEqual(self.patched[-1], ("a", False))
+        self.assertEqual(panel.paused_by_us(), set())
+
+    def test_person_resumed_it_drops_the_memory(self):
+        panel.backup()
+        self.paused["a"] = False
+        self.local["a"] = 49e9  # between 95 and 100%: nothing to do
+        panel.backup()
+        self.assertEqual(panel.paused_by_us(), set())
+
+    def test_unwritable_file_sends_no_pause(self):
+        panel.BACKUP_PAUSED = Path(self.tmp.name) / "no-such-dir" / "x" / "backup-paused.json"
+        saved = panel.remember_paused
+        def boom(ids):
+            raise OSError("disk full")
+        panel.remember_paused = boom
+        try:
+            panel.backup()
+        finally:
+            panel.remember_paused = saved
+        self.assertEqual(self.patched, [])
+        self.assertFalse(self.paused["a"])
+
+    def test_failed_pause_patch_is_forgotten_next_pass(self):
+        self.down = True
+        panel.backup()
+        self.assertEqual(self.patched, [])
+        self.assertEqual(panel.paused_by_us(), {"a"})  # kept for one pass: the pause may have applied
+        self.local["a"] = 49e9  # nothing to do now, and the folder is still unpaused
+        self.down = False
+        panel.backup()
+        self.assertEqual(panel.paused_by_us(), set())
+
+    def test_timeout_after_pause_applied_still_resumes(self):
+        self.timeout_after_apply = True
+        panel.backup()
+        self.assertTrue(self.paused["a"])  # Syncthing applied it, the reply never came
+        self.assertEqual(panel.paused_by_us(), {"a"})
+        self.timeout_after_apply = False
+        self.local["a"] = 40e9
+        panel.backup()
+        self.assertEqual(self.patched[-1], ("a", False))
+        self.assertFalse(self.paused["a"])
+        self.assertEqual(panel.paused_by_us(), set())
+
+    def test_restart_still_resumes(self):
+        panel.backup()
+        # nothing is kept in memory between passes: the file alone says what the panel paused
+        self.assertEqual(panel.paused_by_us(), {"a"})
+        self.local["a"] = 40e9
+        panel.backup()
+        self.assertEqual(self.patched[-1], ("a", False))
+
+
 if __name__ == "__main__":
     unittest.main()

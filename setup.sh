@@ -49,3 +49,4 @@ printf '\n\033[1;32mAll done! Your phone is now a server. Next: pick services in
 echo "  Photo backup from each family phone:  bash scripts/09-syncthing.sh <name>"
 echo "  Charge between 30 and 80% with a smart plug:  bash scripts/10-smart-plug.sh"
 echo "  Security cameras in the panel (home only):  bash scripts/11-cameras.sh"
+echo "  Motion recording for those cameras:  bash scripts/12-recorder.sh"

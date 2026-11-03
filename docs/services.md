@@ -24,7 +24,7 @@ Leave ~1 GB for Android itself, so plan with **~4–4.5 GB** for services.
 | **Syncthing** | automatic photo/file backup between phones and computers | **29 MB** idle | ~0 idle, bursts while syncing | ⭐⭐ medium | ✅ `scripts/09-syncthing.sh <name>` |
 | **Status panel** (small Python web page) | battery, temperature, RAM, disk, services, 24 h battery chart, charge reminder; photo backup progress; optional Starlink dish stats, speed tests (~100 MB each, 0–6 a day), Epson ink levels and who's home | **~25 MB** | ~0 | ⭐ easy | ✅ `scripts/08-panel.sh` → `http://<phone-ip>:8080`, see [panel.md](panel.md) |
 | **Cameras in the panel** (go2rtc + ffmpeg) | at home: a still of each camera every few seconds (each full frame the camera sends; ~4 s on the tested cameras), tap for live video | go2rtc ~20 MB | stills: ~14% of one core for 3 cameras on the G24, ~9% on the Edge 40, only while someone looks; live video is passed through, not re-encoded | ⭐⭐ medium | ✅ `scripts/11-cameras.sh` |
-| **Camera recorder** (ffmpeg, RTSP) | motion clips from the step 11 cameras, watchable in the panel | ~130 MB per camera (measured on the Edge 40) | ~22% of one core per camera with the default motion check, ~13% in `light` mode, including go2rtc (Edge 40; more on slower phones) | ⭐⭐ medium | 📐 designed and measured, not built yet |
+| **Camera recorder** (ffmpeg, RTSP) | motion clips from the step 11 cameras, with a few seconds from before the movement, watchable in the panel at home. Off by default | ~400 MB for 3 cameras, plus its Python program (measured on the Edge 40 without the Python part; the G24 estimate is ~260 MB) | 3 cameras, of one core: **~66%** in the default `fast` mode, **~38%** in `light` mode, including go2rtc's ~21% (Edge 40). Per camera: 12.3% `fast`, 3.1% `light`. G24 (estimate, not measured with 3 cameras): ~60–65% / ~25–30%. Plus ~7 Mbit/s of Wi-Fi (Edge 40, 5 GHz). Runs around the clock, so the phone runs warmer: <!-- TASK12: heat numbers --> see [path-a.md](path-a.md#heat-and-load-read-this-before-leaving-it-on) | ⭐⭐ medium | ✅ `scripts/12-recorder.sh` |
 | **Jellyfin** ("home Netflix") | movies and shows on the TV/Chromecast | est. 300–500 MB (runs inside a Debian container, `proot-distro`) | fine if the TV plays the file as-is; re-encoding video is too heavy for a phone CPU | ⭐⭐⭐ hard | ⏳ not measured |
 | **Uptime monitor** (e.g. Uptime Kuma) | logs when the internet goes down | est. 80–120 MB | low | ⭐⭐ medium | 💡 idea |
 | **Bots / scripts 24/7** (Python, Node) | Telegram bot, alerts, automations | 20–80 MB each | depends | ⭐–⭐⭐ | 💡 idea |
@@ -50,10 +50,16 @@ Minecraft (2 GB with players) + Syncthing + camera recorder (3 cameras) + status
 ≈ 2.0 + 0.05 + 0.4 + 0.02 + 0.003  ≈ 2.5 GB
 ```
 
+That is RAM. The camera recorder also keeps part of the CPU busy all day (see its row), so with Minecraft
+and the recorder together, watch the panel's temperature and use the recorder's `light` mode if the phone
+runs hot.
+
 Jellyfin (~0.5 GB) also fits on RAM, but avoid using it while kids are playing Minecraft:
 both want the CPU. Storage is the other limit: video recording fills disks fast
-(recording a 2K camera all day is ~10–15 GB a day; measured 1.0–1.4 Mbit/s), so the planned recorder only
-keeps motion clips and has a size cap.
+(recording a 2K camera all day is ~10–15 GB a day; measured 1.0–1.4 Mbit/s), so the recorder only
+keeps motion clips and has a size cap (`DISK_RECORDINGS_GB`, default 10% of the storage): at the cap
+the oldest clips are deleted. The panel's storage card shows how the space is split between photo
+backup and recordings.
 
 ## Status panel
 

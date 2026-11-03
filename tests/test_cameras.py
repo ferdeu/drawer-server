@@ -1,6 +1,7 @@
 """Tests for termux/panel/cameras.py. They need Linux (process groups), so run them on the phone:
 bash tests/run-on-phone.sh
 """
+import os
 import sys
 import tempfile
 import threading
@@ -125,6 +126,39 @@ class CamerasTest(unittest.TestCase):
         time.sleep(1)
         s.get(1)
         self.assertEqual(len(self.launches), 2)
+
+    def borrowed_still(self, n, data=b"\xff\xd8borrowed", age=0):
+        folder = self.folder / "recorder-stills"
+        folder.mkdir(exist_ok=True)
+        f = folder / f"cam{n}.jpg"
+        f.write_bytes(data)
+        if age:
+            t = time.time() - age
+            os.utime(f, (t, t))
+        return folder
+
+    def test_borrowed_fresh(self):
+        folder = self.borrowed_still(2)
+        s = self.make(WRITER, borrowed=folder)
+        self.assertEqual(s.get(2), b"\xff\xd8borrowed")
+        self.assertEqual(self.launches, [])
+        self.assertEqual(s.procs, {})
+
+    def test_borrowed_stale(self):
+        folder = self.borrowed_still(2, age=60)
+        s = self.make(WRITER, borrowed=folder)
+        self.assertEqual(self.wait_image(2), b"\xff\xd8jpeg")
+        self.assertEqual(len(self.launches), 1)
+
+    def test_borrowed_takes_over(self):
+        s = self.make(WRITER)
+        self.assertIsNotNone(self.wait_image(1))
+        own = s.procs[1]
+        s.borrowed = self.borrowed_still(1)
+        self.assertEqual(s.get(1), b"\xff\xd8borrowed")
+        own.wait(timeout=3)  # the own ffmpeg is gone, not just forgotten
+        self.assertNotIn(1, s.procs)
+        self.assertEqual(len(self.launches), 1)
 
     def test_stop_all_kills_group(self):
         s = self.make(WRITER)

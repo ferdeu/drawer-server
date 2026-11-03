@@ -1,6 +1,6 @@
 # Path A: server on stock Android (nothing erased)
 
-`bash setup.sh` runs steps 0–8 for you; steps 9 to 11 are separate commands. This page explains what each step does, so you know what's
+`bash setup.sh` runs steps 0–8 for you; steps 9 to 12 are separate commands. This page explains what each step does, so you know what's
 happening and can fix it if something goes wrong.
 
 **Why "Path A"?** There are two ways to turn a phone into a server:
@@ -164,7 +164,7 @@ If **Log in** does nothing, the phone has no web browser for the login page. Bri
 `adb shell cmd package install-existing com.android.chrome` (running `extra-debloat.sh` again does
 it too; older versions of it removed Chrome).
 
-**After step 5 the server is done.** Steps 6–11 add things to do with it. They work over Wi-Fi, so
+**After step 5 the server is done.** Steps 6–12 add things to do with it. They work over Wi-Fi, so
 you can unplug the cable, and each one is optional. They read their settings from `.env`
 (copy `.env.example` to `.env`; each section there says which step uses it).
 
@@ -262,6 +262,99 @@ watch, so give visitors the router's guest network. The video is H.265: phones, 
 on computers usually play it, some browsers don't. A screen too weak for the big stream drops to
 the small one by itself.
 
+## Step 12: motion recording (optional)
+
+`scripts/12-recorder.sh`, needs step 11 and `RECORDER=yes` in `.env`
+
+Step 11 lets you *watch* the cameras at home. This step *records*: when something moves, the phone
+saves a short clip, with a few seconds from before the movement. The clips stay on the phone, and you
+watch them in the panel's **Recordings** section, at home only. No cloud.
+
+**It is off by default.** If your cameras already record to a memory card, you may not need it. Turn it
+on by putting `RECORDER=yes` in `.env` and running `bash scripts/12-recorder.sh`. Turn it off by taking
+that line out and running the script again: it stops the recorder and keeps your clips.
+
+How it works, in short: the phone looks at each camera's small stream to see if the picture changes.
+When it does, it saves the camera's full-quality stream as it comes, **copied, never re-encoded**. A
+clip is at most 5 minutes long; if the movement goes on, the next clip carries on without a gap. There
+is no sound.
+
+**Settings** (all in `.env`, all optional; re-run step 12 after changing one):
+
+| Setting | What it does | Default |
+|---|---|---|
+| `RECORD_CAMERAS` | which cameras record, by the names in `PANEL_CAMERAS`, comma separated | all of them |
+| `RECORD_BEFORE` | seconds kept from before the movement, 0 to 30 | 5 |
+| `RECORD_AFTER` | seconds recorded after the movement stops, 2 to 60 | 10 |
+| `RECORD_SENSITIVITY` | 1 (only big changes) to 10 (small changes too) | 5 |
+| `RECORD_CHECK` | `fast` looks at the picture twice a second; `light` looks only at full frames (about every 4 s on the tested cameras) and uses less CPU, but can miss a quick movement | `fast` |
+| `RECORD_OBSTRUCTED` | what to do when a camera looks covered: `keep` recording or `pause` that camera until it clears | `keep` |
+| `PANEL_RECORDINGS` | `no` hides Recordings in the panel (step 8) | shown |
+| `DISK_RECORDINGS_GB` | most room the clips may use (step 8) | 10% of the phone's storage |
+| `DISK_KEEP_FREE_GB` | free space the recorder keeps; below it the recorder deletes its oldest clips first, and stops making new clips only when none are left (step 8; at least 1) | 5 |
+
+**"5 seconds before" is really 5 to 9.** A clip can only start at a *full frame* (a complete picture the
+camera sends every few seconds, about 4 s on the tested cameras), so it starts at the first full frame
+that is at least `RECORD_BEFORE` seconds back. The end works the same way.
+
+**Where the clips are.** On the phone, in Termux's private storage:
+`~/recordings/<camera>/<YYYY-MM-DD>/`, one `.mp4` per clip and a small `.jpg` thumbnail next to it. The
+file name is the start time and the length in seconds (`143015-42.mp4` = 14:30:15, 42 s). Other apps can't
+see this folder. To copy clips to your computer, use SFTP on port 8022, with the same login as SSH from
+step 3 (WinSCP and FileZilla work).
+
+**When the space is full,** the oldest clips are deleted first, across all cameras, until the folder is
+under `DISK_RECORDINGS_GB`. That is normal and the panel doesn't warn about it. The recorder only ever
+deletes its own clips, never photos or anything else. The panel never deletes or changes anything. To
+delete clips yourself: SFTP, or ssh into the phone and run `rm -r ~/recordings/<camera>/<day>` (or
+`rm -r ~/recordings` for all of them).
+
+**A camera that sees something moving all the time** (a plant in the wind, a flag, rain on the lens) would
+fill the clips folder with useless clips and write to the phone's storage all day. For those cameras use
+`RECORD_OBSTRUCTED=pause`: when a camera sees movement in more than half of its looks over 10 minutes (it clears under a quarter), or its picture
+goes black or flat for about a minute (something on the lens; a camera without night vision does this every
+night), the panel's top line says **"⚠️ Front looks obstructed, check it (still recording)"**, or
+**"(recording paused)"** with `pause`. The warning clears by itself: the movement one when it falls under a quarter of the looks over 10 minutes, the black or flat one after about a minute of normal picture. With
+`pause` the camera still watches, so it starts recording again when things calm down.
+
+### Heat and load: read this before leaving it on
+
+The recorder keeps the phone busy around the clock, because it reads every camera all the time. The phone
+runs **warmer** than with the other services, more so in a closed drawer or while charging.
+
+- Watch the panel's 🌡️ card. The top line warns at 40 °C.
+- Give the phone some air: don't leave it in a closed drawer, and don't cover it.
+- If it runs hot, use `RECORD_CHECK=light` or record fewer cameras (`RECORD_CAMERAS`).
+- Check after the first day, not just the first hour.
+
+<!-- TASK12: heat numbers (measured temperature curve with the recorder on, with the phone named) -->
+
+**Measured on the Motorola Edge 40** (8 GB, fast chip, server on 5 GHz Wi-Fi), three cameras at once,
+in each mode, without the recorder's own Python program (about 0.2% of a core and 20–30 MB more):
+
+| | `light` | `fast` (default) |
+|---|---|---|
+| CPU, of one core (the phone has 8) | about 38% | about 66% (about 8% of the whole phone) |
+| of which one camera's motion check | 3.1% | 12.3% |
+| of which go2rtc relaying the streams | about 21% | about 21% |
+| RAM | about 370 MB | about 400 MB |
+
+The cameras' video adds about 7 Mbit/s over the server's Wi-Fi. On the **Moto G24 Power** (slower chip,
+2.4 GHz Wi-Fi) these are estimates from one camera, not measured with three: about 25–30% of a core
+in `light` mode and about 60–65% in `fast` mode, and about 260 MB of RAM.
+
+**Your phone may differ.** These numbers belong to those phones and those cameras.
+
+- *The phone:* the chip (an older one can cost twice as much per camera), the RAM, the size of the disk
+  (and so the default room for clips), the Wi-Fi band and signal, and how well it gets rid of heat.
+- *The cameras:* how often they send a full frame (changes how long "5 s before" really is and how often
+  `light` mode looks), their bitrate (the size of each clip and the Wi-Fi load) and the frame rate of their small
+  stream (lower it in the camera's own settings and `fast` mode costs less).
+- *The scene:* the more movement, the more is written.
+
+To check your own: open the panel's **🖥️ section** (temperature, free memory) a few hours after turning it
+on, or ask Claude to run the `check-server` skill. If the numbers are too high, use `light` mode or fewer cameras.
+
 ## Optional: free some RAM
 
 `scripts/extra-debloat.sh` (undo with `--revert`)
@@ -323,7 +416,7 @@ adb shell settings delete secure always_on_vpn_app
 adb uninstall com.termux.boot && adb uninstall com.termux.api && adb uninstall com.termux
 ```
 
-Uninstalling Termux deletes everything inside it (the services from steps 6–11, the game world, the
-panel's history) but **not** the photo backups, which live in the phone's storage under `Backups/`.
+Uninstalling Termux deletes everything inside it (the services from steps 6–12, the game world, the
+recorded clips, the panel's history) but **not** the photo backups, which live in the phone's storage under `Backups/`.
 Then remove the router reservation, the NextDNS DNS servers from the router if you set them, and
 Tailscale if you want.

@@ -21,12 +21,15 @@ You are helping someone turn an old Android phone into a home server with this r
 - Step 2: warn the human **before** running it that Google Play Protect will show "Blocked unsafe app"
   three times and they must tap the small **"Install anyway"** text, not "Got it".
 - Step 3: tell the human to unlock the phone and leave it on Termux; the script types into it.
-- Steps 6–11 are optional and run over Wi-Fi (no cable needed). Step 6 skips itself without
+- Steps 6–12 are optional and run over Wi-Fi (no cable needed). Step 6 skips itself without
   `NEXTDNS_LINK_URL` in `.env`, step 7 without `LUANTI_ADMIN`: ask the human before step 6 whether they
-  want them. Steps 9, 10 and 11 are not in `setup.sh`. Run `bash scripts/09-syncthing.sh <name>`
+  want them. Steps 9, 10, 11 and 12 are not in `setup.sh`. Run `bash scripts/09-syncthing.sh <name>`
   once per family phone, with that phone at hand, and relay the on-screen instructions. Step 10 (smart
   plug) needs the human to pair the plug and create a Tuya cloud project first; its header lists how.
   Step 11 (cameras) needs `PANEL_CAMERAS` in `.env` (cameras with RTSP and fixed IPs) and skips itself without it.
+  Step 12 (motion recording) needs step 11 done and `RECORDER=yes` in `.env`, and skips itself without it:
+  ask the human first, and tell them it keeps the phone busy around the clock so it runs warmer (watch the
+  panel's temperature, use `RECORD_CHECK=light` or fewer cameras if hot; see `docs/path-a.md`).
 - If a step fails, stop. Show the error, explain it simply, propose options. Don't skip ahead.
 - Explain things in plain words; people doing this may be beginners or kids.
 - `local/` holds per-phone data (IPs, Termux user). It's gitignored. Never commit it.
@@ -42,6 +45,7 @@ The human may name things loosely ("the panel", "the plug", "photos", "the game"
 | Charging between 30 and 80% (smart plug) | `scripts/10-smart-plug.sh`, `termux/plug-setup.py`; the cycling itself runs inside the panel |
 | Photo backup from family phones | `scripts/09-syncthing.sh` |
 | Security cameras in the panel (stills, live view) | `scripts/11-cameras.sh` (go2rtc), `termux/panel/cameras.py`; tests: `bash tests/run-on-phone.sh` |
+| Motion recording, recordings in the panel, disk budget | `scripts/12-recorder.sh`, `termux/panel/recorder.py`, `clipmaker.py`, `motion.py`, `clips.py`, `settings.py`; `DISK_*` and `PANEL_RECORDINGS` are read by the panel (step 8); tests: `bash tests/run-on-phone.sh` |
 | Game server for the kids | `scripts/07-luanti.sh` |
 | Ad blocking | `scripts/06-nextdns.sh` |
 | Access from outside home | `scripts/05-tailscale.sh` |

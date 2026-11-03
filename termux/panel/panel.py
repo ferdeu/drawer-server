@@ -16,6 +16,7 @@ import re
 import shutil
 import signal
 import socket
+import sys
 import subprocess
 import threading
 import time
@@ -25,6 +26,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cameras import Stills, is_home, kill_leftovers, load_names
+from clips import CLIP, DAY, FOLDER, THUMB, ClipStore
+from settings import disk_settings, read_kv, shows_recordings
 
 HOME = Path.home()
 PORT = int(os.environ.get("PANEL_PORT", "8080"))
@@ -128,8 +131,76 @@ def memory():
 
 
 def disk():
+    """Free space, plus how the disk is split between kinds of files (DISK_KINDS) and one warning:
+    only photo backups warn, since the panel never deletes them. Recordings at their cap are normal
+    (the oldest clip goes), so they never warn."""
     d = shutil.disk_usage(HOME)
-    return {"total_gb": round(d.total / 1e9, 1), "free_gb": round(d.free / 1e9, 1)}
+    settings = disk_settings(read_kv(CONFIG / "disk"), d.total)
+    kinds, sizes = [], {}
+    for kind, measure, share in DISK_KINDS:
+        size = measure()
+        if size is None:  # this server doesn't have that kind
+            continue
+        sizes[kind], limit = size, share(settings)
+        kinds.append({"kind": kind, "gb": round(size / 1e9, 1), "share_gb": None if limit is None else round(limit / 1e9, 1)})
+    warn = None
+    if paused_by_us():
+        warn = "paused"
+    elif settings.backup_bytes and sizes.get("backup", 0) > BACKUP_NEAR * settings.backup_bytes:
+        warn = "near"
+    return {"total_gb": round(d.total / 1e9, 1), "free_gb": round(d.free / 1e9, 1), "kinds": kinds, "warn": warn}
+
+
+BACKUP_NEAR = 0.9     # warn over this part of the photo backup's share
+BACKUP_RESUME = 0.95  # resume the folders the panel paused once under this part of it
+BACKUP_PAUSED = DATA / "backup-paused.json"  # folder ids the panel paused itself, to resume only those
+_rec_size = {"t": 0.0, "v": 0}
+
+
+def backup_bytes():
+    b = _home.get("backup")
+    return b.get("local_bytes") if isinstance(b, dict) else None
+
+
+def recordings_bytes():
+    """The recorder's own count while it runs, else a walk of the clips (at most every 5 minutes).
+    None when there is no recorder and no clips."""
+    now = time.time()
+    rec = recorder_status(now)
+    if rec and not rec["stale"]:
+        return rec["bytes"]
+    if now - _rec_size["t"] > 300:
+        _rec_size["t"], _rec_size["v"] = now, STORE.total_bytes()
+    return None if rec is None and not _rec_size["v"] else _rec_size["v"]
+
+
+# (kind, how many bytes it uses or None, its share of the disk or None); a new kind is one more entry
+DISK_KINDS = [("backup", lambda: backup_bytes(), lambda s: s.backup_bytes),
+              ("recordings", lambda: recordings_bytes(), lambda s: s.recordings_bytes)]
+
+
+def paused_by_us():
+    try:
+        ids = json.loads(BACKUP_PAUSED.read_text())
+        return {i for i in ids if isinstance(i, str)} if isinstance(ids, list) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def remember_paused(ids):
+    BACKUP_PAUSED.parent.mkdir(parents=True, exist_ok=True)
+    tmp = BACKUP_PAUSED.with_name(BACKUP_PAUSED.name + ".tmp")
+    tmp.write_text(json.dumps(sorted(ids)))
+    os.replace(tmp, BACKUP_PAUSED)
+
+
+def backup_pause_plan(total, share, pause_on, paused_now, ours):
+    """(folders to pause, folders to resume). Only folders in `ours` are ever resumed."""
+    full = pause_on and bool(share) and total >= share
+    pause = {f for f, p in paused_now.items() if not p} if full else set()
+    ok = not pause_on or not share or total < BACKUP_RESUME * share
+    resume = {f for f in ours if paused_now.get(f)} if ok else set()
+    return pause, resume
 
 
 def pid_alive(pidfile):
@@ -417,17 +488,62 @@ def backup():
     t0, r0 = _sync_prev.get("t"), _sync_prev.get("in", 0)
     speed = (received - r0) / (now - t0) / 1e6 if t0 and received >= r0 else 0
     _sync_prev["t"], _sync_prev["in"] = now, received
-    folders = []
-    for f in get("/rest/config/folders"):
+    folders, config = [], get("/rest/config/folders")
+    for f in config:
         st = get("/rest/db/status?folder=" + urllib.parse.quote(f["id"]))
         senders = [d["deviceID"] for d in f["devices"] if d["deviceID"] != me]
         total, need = st["globalBytes"], st["needBytes"]
-        folders.append({"label": f["label"] or f["id"],
+        folders.append({"id": f["id"], "label": f["label"] or f["id"], "paused": bool(f.get("paused")),
+                        "local_bytes": int(st.get("localBytes", 0)),
                         "from": ", ".join(names.get(d, d[:7]) for d in senders),
                         "online": any(d in online for d in senders),
                         "pct": 100 if not total else int((total - need) * 100 / total),
                         "need_gb": round(need / 1e9, 1), "need_files": st["needFiles"]})
-    return {"folders": folders, "mb_s": round(speed, 1)}
+    local = sum(f["local_bytes"] for f in folders)
+    keep_backup_share(local, folders, key)
+    return {"folders": folders, "mb_s": round(speed, 1), "local_bytes": local}
+
+
+def keep_backup_share(local, folders, key):
+    """With DISK_BACKUP_PAUSE=yes, pause the photo folders at their share and resume them below 95%.
+    Resumes only folders it paused itself (kept in BACKUP_PAUSED), never ones a person paused."""
+    settings = disk_settings(read_kv(CONFIG / "disk"), shutil.disk_usage(HOME).total)
+    paused = {f["id"]: f["paused"] for f in folders}
+    ours = paused_by_us() & {i for i, p in paused.items() if p}  # a person resumed it, or it's gone: forget it
+    to_pause, to_resume = backup_pause_plan(local, settings.backup_bytes, settings.backup_pause, paused, ours)
+    for fid in sorted(to_pause | to_resume):
+        pause = fid in to_pause
+        if pause:  # write the intent first: a paused folder nobody remembers would never resume
+            try:
+                remember_paused(ours | {fid})
+            except OSError as e:
+                print("backup pause skipped, can't write", BACKUP_PAUSED, e, file=sys.stderr, flush=True)
+                continue
+        req = urllib.request.Request("http://127.0.0.1:8384/rest/config/folders/" + urllib.parse.quote(fid, safe=""),
+                                     data=json.dumps({"paused": pause}).encode(), method="PATCH",
+                                     headers={"X-API-Key": key, "Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=5).close()
+        except (OSError, ValueError):  # Syncthing busy or down: try again in 30 s
+            # A timeout can come after Syncthing applied the pause, so the intent stays in `ours`.
+            # If it didn't apply, the next pass sees the folder unpaused and drops the entry.
+            if pause:
+                ours = ours | {fid}
+            continue
+        for f in folders:
+            if f["id"] == fid:
+                f["paused"] = pause
+        ours = ours | {fid} if pause else ours - {fid}
+        if not pause:
+            try:
+                remember_paused(ours)
+            except OSError:
+                pass  # a stale entry is harmless: only paused folders in it are ever resumed
+    if ours != paused_by_us():  # forgot folders a person resumed
+        try:
+            remember_paused(ours)
+        except OSError:
+            pass
 
 
 # Ezviz (Hikvision) cameras and doorbells; the rest is guessed from the name the device reports
@@ -531,6 +647,50 @@ LIVE_HEADERS = ("upgrade", "connection", "sec-websocket-key", "sec-websocket-ver
                 "sec-websocket-extensions", "sec-websocket-protocol")
 
 
+# --- Recordings (scripts/12-recorder.sh) ---------------------------------------------------------
+# The recorder writes clips and a small state file; the panel only reads them, home-only like live view.
+RECORDINGS = HOME / "recordings"
+STORE = ClipStore(RECORDINGS)
+REC_STATE = DATA / "recorder.json"
+REC_BOOT = HOME / ".termux" / "boot" / "70-recorder.sh"
+REC_STALE_S = 60  # the recorder rewrites its state every few seconds; older than this = not running
+REC_LIST = re.compile(r"/api/recordings")
+REC_DAY = re.compile(r"/api/recordings/([^/]+)/([^/]+)")
+REC_FILE = re.compile(r"/rec/([^/]+)/([^/]+)/([^/]+)")
+RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+CHUNK = 64 * 1024
+
+
+_rec_any = {"t": 0.0, "v": False}  # "is there any clip at all", asked at most once a minute
+
+
+def recordings_shown():
+    # status() asks every few seconds: the boot script check is cheap; without it (recorder off, clips
+    # kept), a look for any clip that stops at the first one, remembered for a minute
+    if not shows_recordings(read_kv(CONFIG / "panel-recordings")):
+        return False
+    if REC_BOOT.exists():
+        return True
+    now = time.time()
+    if now - _rec_any["t"] > 60:
+        _rec_any["t"], _rec_any["v"] = now, STORE.has_clips()
+    return _rec_any["v"]
+
+
+def recorder_status(now):
+    if not REC_BOOT.exists():
+        return None
+    try:
+        state = json.loads(REC_STATE.read_text())
+        cams = [c for c in state["cameras"] if isinstance(c, dict)]
+        out = {"stale": now - float(state["time"]) > REC_STALE_S, "disk_full": bool(state.get("disk_full")),
+               "bytes": int(state.get("bytes", 0)), "today": sum(int(c.get("today", 0)) for c in cams),
+               "cameras": [{"name": c.get("name"), "state": c.get("state"), "obstructed": c.get("obstructed")} for c in cams]}
+    except (OSError, ValueError, KeyError, TypeError):
+        out = {"stale": True, "disk_full": False, "bytes": 0, "today": 0, "cameras": []}
+    return out
+
+
 def status(client_ip="127.0.0.1"):
     # each optional service shows up once its step installed it
     services = [{"name": "SSH", "ok": process_running("sshd")}]
@@ -544,6 +704,9 @@ def status(client_ip="127.0.0.1"):
         services.append({"name": "Syncthing", "ok": pid_alive(HOME / ".cache" / "syncthing.pid")})
     if CAMERA_NAMES:
         services.append({"name": "Cameras", "ok": pid_alive(HOME / ".cache" / "go2rtc.pid")})
+    recorder = recorder_status(time.time())
+    if recorder:
+        services.append({"name": "Recorder", "ok": not recorder["stale"]})
     history = []
     if BATTERY_LOG.exists():
         day_ago = time.time() - 24 * 3600
@@ -556,6 +719,8 @@ def status(client_ip="127.0.0.1"):
             "services": services, "history": history,
             "home": _home, "plug": _plug, "time": int(time.time()), "speed": speed_status(),
             "cameras": {"names": CAMERA_NAMES, "home": is_home(client_ip)} if CAMERA_NAMES else None,
+            "recorder": recorder,
+            "recordings": {"home": is_home(client_ip)} if recordings_shown() else None,
             # the server and its plug show in the server section, not with the other devices
             "self_ip": my_ip(), "plug_ip": PLUG_CONFIG.read_text().split()[1] if PLUG_CONFIG.exists() else None}
 
@@ -584,7 +749,7 @@ TEXT = {
            "net_unknown": "Can't read the dish", "down_now": "download now", "up_now": "upload now",
            "connection": "Connection", "this_server": "Server", "the_plug": "Smart plug",
            "svc": {"SSH": "Remote access", "NextDNS": "Ad blocking", "Luanti": "Kids' game", "Syncthing": "Photo backup",
-                   "Cameras": "Cameras"},
+                   "Cameras": "Cameras", "Recorder": "Recorder"},
            "use_note": "The dish reports how much is being used right now, not the top speed of the connection.",
            "speed_down": "top download", "speed_up": "top upload", "test_now": "Test now", "testing": "testing… (about 30 s)",
            "speed_wait": "just tested, try again in a few minutes",
@@ -599,7 +764,16 @@ TEXT = {
            "p_battery": "battery not read", "p_plug": "smart plug not answering", "p_down": "{s} down",
            "p_hot": "server hot", "p_internet": "internet with alerts", "p_cams": "{n} camera(s) offline",
            "cam_away": "Home only: open {url} on the home Wi-Fi", "no_image": "no image",
-           "connecting": "connecting…", "no_video": "Can't show this camera live on this screen"},
+           "connecting": "connecting…", "no_video": "Can't show this camera live on this screen",
+           "rec": "Recordings", "rec_sum": "{n} today · {gb} GB", "rec_none": "No clips yet",
+           "rec_today": "Today", "rec_yesterday": "Yesterday",
+           "rec_cant_play": "This browser can't play these videos (H.265).", "rec_download": "Download",
+           "p_obstructed": "{cam} looks obstructed, check it ({what})", "p_still_rec": "still recording",
+           "p_paused": "recording paused", "p_not_rec": "{cam} not recording", "p_rec_down": "recorder stopped",
+           "p_disk_full": "Disk almost full: recording stopped",
+           "disk_backup": "Photo backup", "disk_recordings": "Recordings", "disk_free": "Free",
+           "p_backup_near": "photo backup near its limit",
+           "p_backup_paused": "photo backup paused: at its limit"},
     "es": {"title": "Servidor del cajón", "battery": "Batería", "temp": "Temperatura", "ram": "Memoria libre",
            "disk": "Espacio libre", "uptime": "prendido hace", "hours": "h", "services": "Servicios",
            "players": "jugando", "nobody": "nadie jugando", "history": "Batería, últimas 24 h",
@@ -623,7 +797,7 @@ TEXT = {
            "net_unknown": "No puedo leer la antena", "down_now": "bajada actual", "up_now": "subida actual",
            "connection": "Conexión", "this_server": "Servidor", "the_plug": "Enchufe",
            "svc": {"SSH": "Acceso remoto", "NextDNS": "Bloqueo de publicidad", "Luanti": "Juego de los chicos", "Syncthing": "Backup de fotos",
-                   "Cameras": "Cámaras"},
+                   "Cameras": "Cámaras", "Recorder": "Grabador"},
            "use_note": "La antena dice cuánto se está usando en este momento, no la velocidad máxima de la conexión.",
            "speed_down": "bajada máxima", "speed_up": "subida máxima", "test_now": "Medir ahora", "testing": "midiendo… (unos 30 s)",
            "speed_wait": "recién se midió, probá en unos minutos",
@@ -638,7 +812,16 @@ TEXT = {
            "p_battery": "no leo la batería", "p_plug": "el enchufe no contesta", "p_down": "{s} caído",
            "p_hot": "server caliente", "p_internet": "internet con alertas", "p_cams": "{n} cámara(s) desconectada(s)",
            "cam_away": "Solo en casa: abrí {url} en el WiFi de casa", "no_image": "sin imagen",
-           "connecting": "conectando…", "no_video": "No puedo mostrar esta cámara en vivo en esta pantalla"},
+           "connecting": "conectando…", "no_video": "No puedo mostrar esta cámara en vivo en esta pantalla",
+           "rec": "Grabaciones", "rec_sum": "{n} hoy · {gb} GB", "rec_none": "Todavía no hay clips",
+           "rec_today": "Hoy", "rec_yesterday": "Ayer",
+           "rec_cant_play": "Este navegador no puede reproducir estos videos (H.265).", "rec_download": "Descargar",
+           "p_obstructed": "{cam} parece tapada, revisala ({what})", "p_still_rec": "sigue grabando",
+           "p_paused": "grabación en pausa", "p_not_rec": "{cam} no está grabando", "p_rec_down": "el grabador se detuvo",
+           "p_disk_full": "Disco casi lleno: se dejó de grabar",
+           "disk_backup": "Backup de fotos", "disk_recordings": "Grabaciones", "disk_free": "Libre",
+           "p_backup_near": "el backup de fotos está cerca de su límite",
+           "p_backup_paused": "backup de fotos en pausa: llegó a su límite"},
 }
 
 PAGE = """<!doctype html>
@@ -689,6 +872,7 @@ PAGE = """<!doctype html>
   .stats .big { font-size:26px; }
   .unit { font-size:15px; font-weight:600; color:var(--muted); }
   .more { padding:0 0 8px 18px; }
+  .card:has(> details[open]#disk_det) { grid-column:1 / -1; }
   .chips { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:6px; }
   .chips > span { display:inline-flex; align-items:center; }
   .chips .sub { margin-left:4px; }
@@ -708,6 +892,15 @@ PAGE = """<!doctype html>
   .nav { position:absolute; top:50%; transform:translateY(-50%); width:48px; height:48px; border:0; border-radius:50%;
          background:#0007; color:#fff; font-size:20px; cursor:pointer; }
   .nav.prev { left:8px; } .nav.next { right:8px; }
+  .picks { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  button.pick { background:var(--soft); color:var(--ink); border:0; border-radius:8px; padding:6px 12px; font:inherit; font-size:13px; cursor:pointer; }
+  button.pick.on { background:var(--line); color:#fff; }
+  .clips { display:grid; grid-template-columns:repeat(auto-fill, minmax(100px, 1fr)); gap:8px; margin-top:10px; }
+  .clip { position:relative; aspect-ratio:16/9; background:var(--soft); border:0; border-radius:8px; padding:0; overflow:hidden; cursor:pointer; }
+  .clip img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .clip .name { position:absolute; left:4px; bottom:4px; background:#0009; color:#fff; font-size:11px; padding:1px 6px; border-radius:6px; }
+  .live_msg.col { flex-direction:column; gap:10px; text-align:center; padding:0 24px; }
+  .live_msg a { color:#fff; pointer-events:auto; }
 </style></head>
 <body><main>
 <header><h1>🏡 __TITLE__</h1><div class="overall" id="overall"></div></header>
@@ -729,6 +922,13 @@ PAGE = """<!doctype html>
 
 <section class="card hidden" id="cams"><div class="label">📷 __CAMERA__</div>
   <div class="cams" id="cam_grid"></div><div class="sub hidden" id="cam_away"></div></section>
+<section class="card hidden" id="rc"><details data-k="rec" id="rc_det"><summary>🎞️ __REC__<span class="sub right" id="rc_sum"></span></summary>
+  <div class="more" id="rc_body"></div><div class="sub more hidden" id="rc_away"></div></details></section>
+<div class="live hidden" id="clip">
+  <div class="live_top"><b id="clip_name"></b><button id="clip_close" aria-label="close">✕</button></div>
+  <div class="live_view" id="clip_view"><video id="clip_video" controls autoplay playsinline></video><div class="live_msg col" id="clip_msg"></div>
+    <button class="nav prev" id="clip_prev" aria-label="previous">◀</button><button class="nav next" id="clip_next" aria-label="next">▶</button></div>
+</div>
 <div class="live hidden" id="live">
   <div class="live_top"><b id="live_name"></b><button id="live_close" aria-label="close">✕</button></div>
   <div class="live_view" id="live_view"><div class="live_msg" id="live_msg"></div>
@@ -744,7 +944,8 @@ PAGE = """<!doctype html>
     <button class="link" id="chart_btn">__SHOW_CHART__</button></div>
   <div class="card"><div class="label">🌡️ __TEMP__</div><div class="big" id="temp">–</div></div>
   <div class="card"><div class="label">🧠 __RAM__</div><div class="big" id="ram">–</div><div class="sub" id="ramsub"></div></div>
-  <div class="card"><div class="label">💾 __DISK__</div><div class="big" id="disk">–</div><div class="sub" id="disksub"></div></div>
+  <div class="card"><div class="label">💾 __DISK__</div><div class="big" id="disk">–</div><div class="sub" id="disksub"></div>
+    <details data-k="disk" class="hidden" id="disk_det"><summary class="sub">__DETAILS__</summary><div class="more" id="disk_more"></div></details></div>
   <div class="card wide hidden" id="chartbox"><div class="label">📈 __HISTORY__</div>
     <svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
     <div class="axis sub"><span>__DAY_AGO__</span><span>__NOW__</span></div></div>
@@ -800,6 +1001,7 @@ async function refresh() {
     $('ramsub').textContent = '/ ' + num(s.memory.total_mb / 1024, 1) + ' GB';
     $('disk').textContent = num(s.disk.free_gb) + ' GB';
     $('disksub').textContent = '/ ' + num(s.disk.total_gb) + ' GB';
+    drawDisk(s.disk);
     $('up').textContent = s.uptime_h != null ? T.uptime + ' ' + ago(Math.round(s.uptime_h * 60)) : '';
     set('svcs', s.services.map(v => {
       let detail = '';
@@ -817,6 +1019,7 @@ async function refresh() {
     const people = Array.isArray(h.people) ? h.people : null;
     drawInternet(h.starlink, s.speed, s.time);
     drawCameras(s.cameras, s.self_ip);
+    drawRecordings(s.recordings, s.recorder, s.self_ip);
     drawPeople(people, h);
     drawConnection(h.devices, s);
     drawDevices(h.devices, (people ? people.map(x => x.ip) : []).concat([s.self_ip, s.plug_ip]));
@@ -826,16 +1029,40 @@ async function refresh() {
   } catch (e) { $('foot').textContent = '⚠️ ' + e; }
 }
 
+// how the disk is split: one row per kind (size, share and a bar), then what is free
+function drawDisk(d) {
+  const kinds = d.kinds || [];
+  show('disk_det', kinds.length);
+  set('disk_more', kinds.map(k => {
+    const pct = k.share_gb ? Math.round(k.gb * 100 / k.share_gb) : null;
+    const bad = k.kind === 'backup' && d.warn;
+    return row(T['disk_' + k.kind] || esc(k.kind), pct == null ? num(k.gb, 1) + ' GB'
+      : num(k.gb, 1) + ' / ' + num(k.share_gb, 1) + ' GB (' + pct + '%)', bad ? 'color:var(--bad)' : '') +
+      (pct == null ? '' : `<div class="bar"><i style="width:${Math.min(100, pct)}%${bad ? ';background:var(--bad)' : ''}"></i></div>`);
+  }).join('') + row(T.disk_free, num(d.free_gb, 1) + ' GB'));
+}
+
 function drawOverall(s, h) {
   const probs = [], t = (s.battery || {}).temperature, sl = h.starlink;
   if (s.battery_stale) probs.push(T.p_battery);
   if (s.plug && s.plug.error) probs.push(T.p_plug);
-  s.services.filter(v => !v.ok).forEach(v => probs.push(T.p_down.replace('{s}', T.svc[v.name] || v.name)));
+  // the recorder has its own message below ("recorder stopped"), so its service dot doesn't add a second one
+  s.services.filter(v => !v.ok && v.name !== 'Recorder').forEach(v => probs.push(T.p_down.replace('{s}', T.svc[v.name] || v.name)));
   if (t >= 40) probs.push(T.p_hot);
   if (sl && (sl.error || sl.alerts.length)) probs.push(T.p_internet);
   const cams = ((h.devices || {}).devices || []).filter(d => d.kind === 'camera' && !d.online).length;
   if (cams) probs.push(T.p_cams.replace('{n}', cams));
-  $('overall').textContent = probs.length ? '⚠️ ' + probs.join(' · ') : '✓ ' + T.all_ok;
+  const rc = s.recorder;
+  if (rc && rc.stale) probs.push(T.p_rec_down);  // its last state is old news: only this message
+  else if (rc) {
+    (rc.cameras || []).forEach(c => {  // a camera that is "off" is off on purpose: no warning
+      if (c.state === 'offline') probs.push(T.p_not_rec.replace('{cam}', c.name));
+      else if (c.obstructed) probs.push(T.p_obstructed.replace('{cam}', c.name).replace('{what}', c.state === 'paused' ? T.p_paused : T.p_still_rec));
+    });
+    if (rc.disk_full) probs.push(T.p_disk_full);
+  }
+  if (s.disk.warn) probs.push(s.disk.warn === 'paused' ? T.p_backup_paused : T.p_backup_near);
+  $('overall').textContent = probs.length ? '⚠️ '+ probs.join(' · ') : '✓ ' + T.all_ok;
   $('overall').className = 'overall ' + (probs.length ? 'bad' : 'ok');
 }
 
@@ -934,6 +1161,101 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') stills(); else if (liveAt >= 0) closeLive();
 });
 $('cam_grid').onclick = e => { const b = e.target.closest('.cam'); if (b) openLive(+b.dataset.i); };
+
+// recordings: nothing is fetched until the section is opened (and again each time it is)
+let recHome = false, recLoaded = false, recs = [], recCam = 0, recDay = null, recClips = [], clipAt = -1;
+const enc = encodeURIComponent;
+const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const recUrl = (c, d, f) => '/rec/' + enc(c) + '/' + enc(d) + '/' + enc(f);
+function drawRecordings(r, rc, selfIp) {
+  show('rc', r);
+  recHome = !!(r && r.home);
+  if (!r) return;
+  $('rc_sum').textContent = rc ? T.rec_sum.replace('{n}', rc.today).replace('{gb}', num(rc.bytes / 1e9, 1)) : '';
+  show('rc_body', recHome);
+  show('rc_away', !recHome);
+  if (!recHome) $('rc_away').textContent = T.cam_away.replace('{url}', 'http://' + (selfIp || 'server') + ':' + (location.port || 80));
+  else if ($('rc_det').open) loadRecs();
+}
+function dayName(d) {
+  const t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);
+  return d === ymd(t) ? T.rec_today : d === ymd(y) ? T.rec_yesterday : d;
+}
+async function loadRecs() {
+  if (!recHome || recLoaded) return;
+  recLoaded = true;
+  try {
+    recs = (await (await fetch('/api/recordings')).json()).cameras;
+    recCam = Math.max(0, recs.findIndex(c => c.days.length));
+    await pickDay(recs.length ? recs[recCam].days[0] || null : null);
+  } catch (e) { recLoaded = false; $('rc_body').textContent = '⚠️ ' + e; }
+}
+async function pickDay(day) {
+  recDay = day;
+  recClips = [];
+  if (day) recClips = (await (await fetch('/api/recordings/' + enc(recs[recCam].folder) + '/' + enc(day))).json()).clips;
+  drawRecs();
+}
+function drawRecs() {
+  const cam = recs[recCam];
+  if (!cam || !cam.days.length) { $('rc_body').innerHTML = `<div class="sub">${T.rec_none}</div>`; return; }
+  const pick = (on, attr, label) => `<button class="pick${on ? ' on' : ''}" ${attr}>${esc(label)}</button>`;
+  $('rc_body').innerHTML =
+    (recs.length > 1 ? `<div class="picks">${recs.map((c, i) => pick(i === recCam, `data-cam="${i}"`, c.name)).join('')}</div>` : '') +
+    `<div class="picks">${cam.days.map(d => pick(d === recDay, `data-day="${esc(d)}"`, dayName(d))).join('')}</div>` +
+    (recClips.length ? `<div class="clips">${recClips.map((c, i) => `<button class="clip" data-i="${i}">` +
+      (c.thumb ? `<img alt="" loading="lazy" src="${recUrl(cam.folder, recDay, c.file.slice(0, -4) + '.jpg')}">` : '') +
+      `<span class="name">${esc(c.time)} · ${c.len}s</span></button>`).join('')}</div>` : `<div class="sub" style="margin-top:8px">${T.rec_none}</div>`);
+}
+document.addEventListener('toggle', e => {
+  if (e.target !== $('rc_det')) return;
+  if (e.target.open) loadRecs(); else recLoaded = false;
+}, true);
+$('rc_body').onclick = async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  try {
+    if (b.dataset.cam != null) { recCam = +b.dataset.cam; await pickDay(recs[recCam].days[0] || null); }
+    else if (b.dataset.day) await pickDay(b.dataset.day);
+    else if (b.dataset.i != null) openClip(+b.dataset.i);
+  } catch (err) { $('rc_body').textContent = '⚠️ ' + err; }
+};
+
+// clip player: full screen like live view; the back button closes it
+function openClip(i) {
+  if (!recClips.length) return;
+  if (clipAt < 0) history.pushState({clip: 1}, '');
+  clipAt = (i + recClips.length) % recClips.length;
+  const c = recClips[clipAt], v = $('clip_video');
+  show('clip', true);
+  $('clip_name').textContent = recs[recCam].name + ' · ' + dayName(recDay) + ' ' + c.time;
+  $('clip_msg').textContent = '';
+  v.src = recUrl(recs[recCam].folder, recDay, c.file);
+  v.play().catch(() => {});  // a blocked autoplay is fine; a broken video fires the error event below
+}
+$('clip_video').addEventListener('error', () => {
+  if (clipAt < 0) return;  // closing empties the source, which fires this too
+  const c = recClips[clipAt], msg = $('clip_msg');
+  msg.textContent = T.rec_cant_play;
+  const a = document.createElement('a');
+  a.href = recUrl(recs[recCam].folder, recDay, c.file);
+  a.download = c.file;
+  a.textContent = T.rec_download;
+  msg.append(a);
+});
+function closeClip(fromBack) {
+  const v = $('clip_video');
+  clipAt = -1;
+  v.pause();
+  v.removeAttribute('src');
+  v.load();
+  show('clip', false);
+  if (!fromBack) history.back();
+}
+window.addEventListener('popstate', () => { if (clipAt >= 0) closeClip(true); });
+$('clip_close').onclick = () => closeClip();
+$('clip_prev').onclick = () => openClip(clipAt - 1);
+$('clip_next').onclick = () => openClip(clipAt + 1);
 
 // live view: go2rtc's player, through the panel (/live/...), one camera at a time
 let liveAt = -1, player = null, Player = null;
@@ -1161,6 +1483,9 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.player()
             return
+        if self.path.startswith(("/api/recordings", "/rec/")):
+            self.recordings()
+            return
         if self.path == "/api/status":
             body, kind = json.dumps(status(self.client_address[0])).encode(), "application/json"
         elif self.path in ("/", "/index.html"):
@@ -1198,6 +1523,82 @@ class Handler(BaseHTTPRequestHandler):
             return False
         origin = self.headers.get("Origin")
         return origin is None or origin == "http://" + host
+
+    def recordings(self):
+        path = self.path.split("?", 1)[0]
+        if not recordings_shown():
+            self.send_error(404)
+            return
+        if not is_home(self.client_address[0]) or not self.same_site():
+            self.send_error(403)  # recordings are home-only, like live view
+            return
+        # each segment is decoded once; folder names hold a literal % themselves
+        if path == "/api/recordings":
+            self.send_json({"cameras": STORE.cameras()})
+        elif m := REC_DAY.fullmatch(path):
+            folder, day = (urllib.parse.unquote(g) for g in m.groups())
+            if FOLDER.fullmatch(folder) and DAY.fullmatch(day):
+                self.send_json({"clips": STORE.clips(folder, day)})
+            else:
+                self.send_error(404)
+        elif m := REC_FILE.fullmatch(path):
+            folder, day, name = (urllib.parse.unquote(g) for g in m.groups())
+            found = STORE.file(folder, day, name)
+            if found is None:
+                self.send_error(404)
+            else:
+                self.send_file(found, "video/mp4" if CLIP.fullmatch(name) else "image/jpeg")
+        else:
+            self.send_error(404)
+
+    def send_json(self, data):
+        body = json.dumps(data).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_file(self, path, kind):
+        """A file with single-range support, so the browser can seek in a clip."""
+        try:
+            f = open(path, "rb")
+        except OSError:  # gone since the lookup (the recorder trims old clips)
+            self.send_error(404)
+            return
+        with f:
+            size = os.fstat(f.fileno()).st_size
+            start, end, code = 0, size - 1, 200
+            m = RANGE.fullmatch(self.headers.get("Range", "").strip())
+            if m and (m.group(1) or m.group(2)):
+                if m.group(1):
+                    start = int(m.group(1))
+                    end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+                else:  # bytes=-n: the last n bytes
+                    start, end = max(size - int(m.group(2)), 0), size - 1
+                if start >= size or start > end:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                code = 206
+            self.send_response(code)
+            self.send_header("Content-Type", kind)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "private, max-age=86400")
+            if code == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.send_header("Content-Length", str(end - start + 1))
+            self.end_headers()
+            try:
+                f.seek(start)
+                left = end - start + 1
+                while left > 0 and (chunk := f.read(min(CHUNK, left))):
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True  # the viewer left mid-clip
 
     def camera(self, n):
         image = STILLS.get(n)
@@ -1296,7 +1697,7 @@ if __name__ == "__main__":
     CAMERA_NAMES = load_names(CONFIG / "cameras")  # names only; the codes stay in go2rtc's config
     if CAMERA_NAMES:
         kill_leftovers(DATA / "cams")
-        STILLS = Stills(len(CAMERA_NAMES), DATA / "cams")
+        STILLS = Stills(len(CAMERA_NAMES), DATA / "cams", borrowed=DATA / "recorder-stills")
         STILLS.start_reaper()
         # each ffmpeg has its own process group: stopping the panel must stop them too
         signal.signal(signal.SIGTERM, lambda *_: (STILLS.stop_all(), os._exit(0)))

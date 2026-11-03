@@ -34,7 +34,8 @@ setting up the new phone overwrites them.
 ## Part 2: set up the new phone
 
 Follow the normal setup with the new phone: [docs/path-a.md](path-a.md), **steps 0 to 8, and 11**
-if you have cameras. Skip steps 9 and 10: the photos and the smart plug come over in part 4.
+if you have cameras. Skip steps 9, 10 and 12: the photos, the smart plug and the recorder come over
+in part 4.
 
 - Its USB port doesn't work? Use [wireless debugging](path-a.md#no-usb-cable-wireless-debugging).
 - Step 2 asks three times about Play Protect: if you don't see "Install anyway", tap **More details**
@@ -136,7 +137,8 @@ Then open the panel at its usual address (`http://<server-ip>:8080`) and check:
 ## The old phone
 
 Its services are stopped and won't start again after a reboot. Its files are still there, and in
-`local/old-server-home.tar` on the computer. Keep it as a spare for a while; once you're sure nothing
+`local/old-server-home.tar` on the computer. Camera recordings stay on the old phone (`~/recordings`,
+reach them with SFTP): the new phone starts with none. Keep it as a spare for a while; once you're sure nothing
 is missing, you can reset it.
 
 **To go back** to the old phone: turn its Wi-Fi on, put its MAC back in the router's reservation, and

@@ -2,7 +2,7 @@
 
 One ffmpeg per camera, started when someone asks for its picture and stopped when nobody has asked
 for a while. It reads the camera's small stream through go2rtc (scripts/11-cameras.sh) and decodes
-only full frames, so a new still lands every ~2.5 s for little CPU.
+only full frames, so a new still lands every ~4 s for little CPU.
 """
 import ipaddress
 import os
@@ -62,9 +62,11 @@ def _stop(proc):
 
 
 class Stills:
-    def __init__(self, count, folder, url_for=default_url, idle_s=30, stale_s=15, retry_s=10, cmd=ffmpeg_cmd):
+    def __init__(self, count, folder, url_for=default_url, idle_s=30, stale_s=15, retry_s=10, cmd=ffmpeg_cmd,
+                 borrowed=None):
         self.count, self.folder, self.url_for, self.cmd = count, Path(folder), url_for, cmd
         self.idle_s, self.stale_s, self.retry_s = idle_s, stale_s, retry_s
+        self.borrowed = Path(borrowed) if borrowed else None  # the recorder's stills: use them while fresh
         self.procs, self.asked, self.started = {}, {}, {}
         self.lock = threading.Lock()
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -78,6 +80,16 @@ class Stills:
         except OSError:
             return float("inf")
 
+    def borrowed_still(self, n, now):
+        """The recorder's still of camera n when it is fresh, else None."""
+        if not self.borrowed:
+            return None
+        f = self.borrowed / f"cam{n}.jpg"
+        try:
+            return f if now - f.stat().st_mtime <= self.stale_s else None
+        except OSError:
+            return None
+
     def get(self, n):
         """Latest still of camera n (1-based) as JPEG bytes, or None while there's no fresh one."""
         if not 1 <= n <= self.count:
@@ -86,6 +98,17 @@ class Stills:
         stuck = None
         with self.lock:
             self.asked[n] = now
+            lent = self.borrowed_still(n, now)
+            if lent:  # the recorder already makes stills: one camera connection less
+                own = self.procs.pop(n, None)
+        if lent:
+            if own:
+                _stop(own)
+            try:
+                return lent.read_bytes()
+            except OSError:
+                pass  # vanished between the check and the read: do it ourselves
+        with self.lock:
             proc = self.procs.get(n)
             if proc and proc.poll() is not None:  # ffmpeg died (camera or go2rtc down)
                 del self.procs[n]

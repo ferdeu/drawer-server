@@ -21,7 +21,7 @@ CHARGE_HIGH="${CHARGE_HIGH:-80}"
 say "Copying the panel to the phone"
 phone_ssh "$HOST" 'mkdir -p ~/panel'
 scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
-  "$REPO_ROOT/termux/panel/panel.py" "$REPO_ROOT/termux/panel/cameras.py" "$TERMUX_USER@$HOST:panel/"
+  "$REPO_ROOT"/termux/panel/*.py "$TERMUX_USER@$HOST:panel/"
 
 # Optional home cards, configured from .env:
 #   PANEL_STARLINK=yes                      read the Starlink dish (192.168.100.1)
@@ -33,12 +33,21 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #   PANEL_DEVICE_HIDE="F4-70-18-00-00-03,..."   devices to leave out, e.g. a camera's Wi-Fi turned off on purpose
 #   PANEL_SPEEDTEST=4                       speed tests a day, 0-6 (0: only the "Test now" button);
 #                                           each one moves ~100 MB
+#   PANEL_RECORDINGS=no                     hide the motion recordings section (step 12)
+#   DISK_RECORDINGS_GB, DISK_BACKUP_GB, DISK_KEEP_FREE_GB, DISK_BACKUP_PAUSE   disk split (see .env.example)
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
 
 [[ "${PANEL_PRINTER_IP:-}" =~ ^([0-9.]+)?$ ]] || die "PANEL_PRINTER_IP should be an address like 192.168.1.40"
 [[ "${PANEL_SPEEDTEST:-}" =~ ^[0-6]?$ ]] || die "PANEL_SPEEDTEST should be how many speed tests a day, 0 to 6"
 [[ "${PANEL_DEVICE_HIDE:-}" =~ ^([0-9A-Fa-f:-]{17}( *, *[0-9A-Fa-f:-]{17})*)?$ ]] ||
   die "PANEL_DEVICE_HIDE should be MACs separated by commas, like F4-70-18-00-00-03,F4-70-18-00-00-04"
+
+DISK_NUM='^([0-9]+(\.[0-9]+)?)?$'
+for v in DISK_RECORDINGS_GB DISK_BACKUP_GB DISK_KEEP_FREE_GB; do
+  [[ "${!v:-}" =~ $DISK_NUM ]] || die "$v should be a number of GB like 20 or 7.5 (got ${!v})"
+done
+[[ "${DISK_BACKUP_PAUSE:-}" =~ ^(yes|no)?$ ]] || die "DISK_BACKUP_PAUSE should be yes or no"
+[[ "${PANEL_RECORDINGS:-}" =~ ^(yes|no)?$ ]] || die "PANEL_RECORDINGS should be yes or no"
 
 # the router password, names and title go over stdin, never inside a command line
 phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names ~/.config/drawer-server/device-hide ~/.config/drawer-server/title ~/.config/drawer-server/people'
@@ -48,6 +57,15 @@ fi
 if [ -n "$PEOPLE_LINES" ]; then
   printf '%s\n' "$PEOPLE_LINES" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/people'
 fi
+# disk split and the recordings section: the panel and the recorder re-read these every 30 s
+printf 'recordings_gb=%s
+backup_gb=%s
+backup_pause=%s
+keep_free_gb=%s
+'   "${DISK_RECORDINGS_GB:-}" "${DISK_BACKUP_GB:-}" "${DISK_BACKUP_PAUSE:-}" "${DISK_KEEP_FREE_GB:-}" |
+  phone_ssh "$HOST" 'cat > ~/.config/drawer-server/disk'
+printf 'show=%s
+' "${PANEL_RECORDINGS:-}" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/panel-recordings'
 if [ "${PANEL_ROUTER:-}" = tplink ]; then
   say "Router card: installing the TP-Link client (first time: ~2 minutes)"
   [ -n "${ROUTER_URL:-}" ] && [ -n "${ROUTER_PASSWORD:-}" ] || die "PANEL_ROUTER=tplink needs ROUTER_URL and ROUTER_PASSWORD in .env"
