@@ -8,3 +8,6 @@ local/
 PROGRESO.md
 # Python bytecode from syntax checks
 __pycache__/
+# design notes and plans (kept locally, not published)
+docs/superpowers/
+.superpowers/
