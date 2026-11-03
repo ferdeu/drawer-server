@@ -31,7 +31,7 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #                                           (uses ROUTER_URL and ROUTER_PASSWORD)
 #   PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Doorbell,..."   names for devices that don't report one
 #   PANEL_DEVICE_HIDE="F4-70-18-00-00-03,..."   devices to leave out, e.g. a camera's Wi-Fi turned off on purpose
-#   PANEL_SPEEDTEST=4                       speed tests a day, 0-6 (0: only the "Test now" button);
+#   PANEL_SPEEDTEST=4                       speed tests a day, 0-6 (0: only the "Test again" button);
 #                                           each one moves ~100 MB
 #   PANEL_RECORDINGS=no                     hide the motion recordings section (step 12)
 #   DISK_RECORDINGS_GB, DISK_BACKUP_GB, DISK_KEEP_FREE_GB, DISK_BACKUP_PAUSE   disk split (see .env.example)

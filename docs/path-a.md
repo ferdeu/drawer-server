@@ -268,7 +268,7 @@ the small one by itself.
 
 Step 11 lets you *watch* the cameras at home. This step *records*: when something moves, the phone
 saves a short clip, with a few seconds from before the movement. The clips stay on the phone, and you
-watch them in the panel's **Recordings** section, at home only. No cloud.
+watch them in the panel's **Cameras** section (the Recordings line), at home only. No cloud.
 
 **It is off by default.** If your cameras already record to a memory card, you may not need it. Turn it
 on by putting `RECORDER=yes` in `.env` and running `bash scripts/12-recorder.sh`. Turn it off by taking

@@ -735,22 +735,27 @@ def status(client_ip="127.0.0.1"):
             "home": _home, "plug": _plug, "time": int(time.time()), "speed": speed_status(),
             "cameras": {"names": CAMERA_NAMES, "home": is_home(client_ip)} if CAMERA_NAMES else None,
             "recorder": recorder,
-            "recordings": {"home": is_home(client_ip)} if recordings_shown() else None,
+            # None only when PANEL_RECORDINGS hides them; nothing recorded yet and no recorder = "off"
+            "recordings": {"home": is_home(client_ip)} if recordings_shown()
+                          else {"off": True} if shows_recordings(read_kv(CONFIG / "panel-recordings")) else None,
             # the server and its plug show in the server section, not with the other devices
             "self_ip": my_ip(), "plug_ip": PLUG_CONFIG.read_text().split()[1] if PLUG_CONFIG.exists() else None}
 
 
 TEXT = {
-    "en": {"title": "Drawer server", "battery": "Battery", "temp": "Temperature", "ram": "Free memory",
+    "en": {"title": "Drawer server", "battery": "Battery", "temp": "Temperature", "ram": "Memory (RAM)",
            "disk": "Free storage", "uptime": "on for", "hours": "h", "services": "Services",
-           "players": "playing", "nobody": "nobody playing", "history": "Battery, last 24 h",
+           "players": "playing", "nobody": "nobody playing",
            "charging": "charging", "not_charging": "on battery", "updated": "updated",
            "unplug": "🔌 Battery at {p}%: unplug the charger (keeping it between 30 and 80% makes it last longer)",
            "plug": "🔌 Battery at {p}%: plug the charger in (unplug it at 80%)",
-           "plug_on": "smart plug on", "plug_off": "smart plug off until {low}%",
+           "plug_on": "On", "plug_off": "Off", "plug_to_high": "charging up to {high}%", "plug_to_low": "charges again at {low}%",
+           "plug_noanswer": "Not answering", "plug_reach": "connected", "plug_now": "Now",
+           "plug_rule": "It turns off when the battery reaches {high}% and back on when it drops to {low}%, so the battery lasts more years.",
+           "ram_each": "What each part uses:", "ram_rest": "Android and the rest",
            "plug_error": "⚠️ Can't reach the smart plug ({e}). Is it on and on the Wi-Fi?",
            "latency": "latency", "obstructed": "Sky blocked", "dish_up": "Dish on for", "alerts": "Dish alerts",
-           "printer": "Printer", "people": "Who's home", "home": "home", "away": "away",
+           "printer": "Printer", "people": "Who's home", "bk": "Backup", "bk_ok": "photos up to date", "bk_none": "not set up",
            "api_asleep": "⚠️ Can't read the battery: Android put Termux:API to sleep. Run scripts/restart-server.sh with the phone plugged into the computer.",
            "seen": "seen {m} ago", "devices": "Devices",
            "on": "on", "wired": "cable", "no_ip": "connected but the router gave it no address",
@@ -762,21 +767,21 @@ TEXT = {
            "black": "black", "cyan": "cyan", "magenta": "magenta", "yellow": "yellow",
            "all_ok": "Everything works", "internet": "Internet", "details": "Details",
            "net_unknown": "Can't read the dish", "down_now": "download now", "up_now": "upload now",
-           "this_server": "Server", "the_plug": "Smart plug",
+           "the_plug": "Smart plug",
            "svc": {"SSH": "Remote access", "NextDNS": "Ad blocking", "Luanti": "Kids' game", "Syncthing": "Photo backup",
                    "Cameras": "Cameras", "Recorder": "Recorder", "Panel": "Panel", "Other": "Other"},
-           "cpu": "Processor", "calm": "calm", "busy": "busy", "very_busy": "very busy",
-           "load": "load {l} on {n} cores",
+           "cpu": "Processor", "cpu_of_max": "of its top speed", "cpu_each": "What each part uses, of the whole:",
+           "temp_ok": "normal", "temp_warm": "warm", "temp_hot": "hot", "ram_of": "free of {t}", "of": "of {t}",
            "cpu_note": "Android doesn't let apps see the processor's real use; this is how fast it's running compared with its top speed.",
            "uses_w": "using {w} W", "charges_w": "charging at {w} W",
            "use_note": "The dish reports how much is being used right now, not the top speed of the connection.",
-           "speed_down": "top download", "speed_up": "top upload", "test_now": "Test now", "testing": "testing… (about 30 s)",
+           "net_now_t": "Now", "speed_t": "Speed test", "speed_down": "download", "speed_up": "upload", "test_now": "Test again", "testing": "testing… (about 30 s)",
            "speed_wait": "just tested, try again in a few minutes",
            "speed_by_ip": "open the panel by its IP address, not a name, to test", "speed_fail": "the last test failed",
-           "speed_ago": "speed test {t} ago", "speed_none": "no speed test yet", "speed_day": "Speed tests, last 24 h",
+           "speed_ago": "tested {t} ago", "speed_none": "no speed test yet", "speed_day": "Speed tests, last 24 h",
            "speed_every": "It tests by itself {n} times a day.", "speed_every1": "It tests by itself once a day.",
            "speed_note": "Measured from the server over its own Wi-Fi, against the nearest speedtest.net server; each test moves about 100 MB.",
-           "server": "Server", "show_chart": "📈 24 h", "n_of": "{a} of {b} online", "n_home": "{a} of {b} home", "wifi": "Wi-Fi",
+           "server": "Server", "last_24h": "Last 24 h", "n_of": "{a} of {b} online", "n_home": "{a} of {b} home", "wifi": "Wi-Fi",
            "photos": "Photos", "no_details": "No details while away.",
            "printer_off": "not answering (off?)", "lowest": "lowest: {c} {p}%",
            "day_ago": "24 h ago", "now": "now",
@@ -784,7 +789,7 @@ TEXT = {
            "p_hot": "server hot", "p_internet": "internet with alerts", "p_cams": "{n} camera(s) offline",
            "cam_away": "Home only: open {url} on the home Wi-Fi", "no_image": "no image",
            "connecting": "connecting…", "no_video": "Can't show this camera live on this screen",
-           "rec": "Recordings", "rec_sum": "{n} today · {gb} GB", "rec_none": "No clips yet",
+           "rec": "Recordings", "rec_sum": "{n} today · {gb} GB", "rec_off": "off", "n_cams": "{n} cameras", "not_rec": "not recording", "rec_none": "No clips yet",
            "rec_today": "Today", "rec_yesterday": "Yesterday",
            "rec_cant_play": "This browser can't play these videos (H.265).", "rec_download": "Download",
            "rec_delete": "Delete", "rec_del_one": "Delete this clip? It can't be undone.",
@@ -796,16 +801,19 @@ TEXT = {
            "disk_backup": "Photo backup", "disk_recordings": "Recordings", "disk_free": "Free",
            "p_backup_near": "photo backup near its limit",
            "p_backup_paused": "photo backup paused: at its limit"},
-    "es": {"title": "Servidor del cajón", "battery": "Batería", "temp": "Temperatura", "ram": "Memoria libre",
+    "es": {"title": "Servidor del cajón", "battery": "Batería", "temp": "Temperatura", "ram": "Memoria RAM",
            "disk": "Espacio libre", "uptime": "prendido hace", "hours": "h", "services": "Servicios",
-           "players": "jugando", "nobody": "nadie jugando", "history": "Batería, últimas 24 h",
+           "players": "jugando", "nobody": "nadie jugando",
            "charging": "cargando", "not_charging": "a batería", "updated": "actualizado",
            "unplug": "🔌 Batería al {p}%: desenchufá el cargador (entre 30 y 80% dura muchos más años)",
            "plug": "🔌 Batería al {p}%: enchufá el cargador (y sacalo al 80%)",
-           "plug_on": "enchufe prendido", "plug_off": "enchufe apagado hasta el {low}%",
+           "plug_on": "Prendido", "plug_off": "Apagado", "plug_to_high": "carga hasta el {high}%", "plug_to_low": "vuelve a cargar al bajar a {low}%",
+           "plug_noanswer": "No contesta", "plug_reach": "conectado", "plug_now": "Ahora",
+           "plug_rule": "Se apaga cuando la batería llega al {high}% y se vuelve a prender al bajar a {low}%, así la batería dura más años.",
+           "ram_each": "Cuánto usa cada cosa:", "ram_rest": "Android y el resto",
            "plug_error": "⚠️ No puedo hablar con el enchufe ({e}). ¿Está prendido y en el WiFi?",
            "latency": "latencia", "obstructed": "Cielo tapado", "dish_up": "Antena prendida hace", "alerts": "Alertas de la antena",
-           "printer": "Impresora", "people": "¿Quién está en casa?", "home": "en casa", "away": "afuera",
+           "printer": "Impresora", "people": "¿Quién está en casa?", "bk": "Backup", "bk_ok": "fotos al día", "bk_none": "sin activar",
            "api_asleep": "⚠️ No puedo leer la batería: Android durmió a Termux:API. Corré scripts/restart-server.sh con el celu enchufado a la compu.",
            "seen": "visto hace {m}", "devices": "Dispositivos",
            "on": "en", "wired": "cable", "no_ip": "conectado pero el router no le dio dirección",
@@ -817,21 +825,21 @@ TEXT = {
            "black": "negro", "cyan": "cian", "magenta": "magenta", "yellow": "amarillo",
            "all_ok": "Todo funciona", "internet": "Internet", "details": "Detalles",
            "net_unknown": "No puedo leer la antena", "down_now": "bajada actual", "up_now": "subida actual",
-           "this_server": "Servidor", "the_plug": "Enchufe",
+           "the_plug": "Enchufe",
            "svc": {"SSH": "Acceso remoto", "NextDNS": "Bloqueo de publicidad", "Luanti": "Juego de los chicos", "Syncthing": "Backup de fotos",
                    "Cameras": "Cámaras", "Recorder": "Grabador", "Panel": "Panel", "Other": "Otros"},
-           "cpu": "Procesador", "calm": "tranquilo", "busy": "ocupado", "very_busy": "muy ocupado",
-           "load": "carga {l} en {n} núcleos",
+           "cpu": "Procesador", "cpu_of_max": "de su velocidad máxima", "cpu_each": "Cuánto usa cada cosa, del total:",
+           "temp_ok": "normal", "temp_warm": "tibio", "temp_hot": "caliente", "ram_of": "libres de {t}", "of": "de {t}",
            "cpu_note": "Android no deja ver el uso real del procesador; esto es qué tan rápido va comparado con su máximo.",
            "uses_w": "usa {w} W", "charges_w": "carga a {w} W",
            "use_note": "La antena dice cuánto se está usando en este momento, no la velocidad máxima de la conexión.",
-           "speed_down": "bajada máxima", "speed_up": "subida máxima", "test_now": "Medir ahora", "testing": "midiendo… (unos 30 s)",
+           "net_now_t": "Ahora", "speed_t": "Test de velocidad", "speed_down": "bajada", "speed_up": "subida", "test_now": "Medir de nuevo", "testing": "midiendo… (unos 30 s)",
            "speed_wait": "recién se midió, probá en unos minutos",
            "speed_by_ip": "abrí el panel con su dirección IP, no con un nombre, para medir", "speed_fail": "falló la última medición",
-           "speed_ago": "test de velocidad de hace {t}", "speed_none": "todavía sin medir", "speed_day": "Mediciones, últimas 24 h",
+           "speed_ago": "medido hace {t}", "speed_none": "todavía sin medir", "speed_day": "Mediciones, últimas 24 h",
            "speed_every": "Mide sola {n} veces por día.", "speed_every1": "Mide sola una vez por día.",
            "speed_note": "Medido desde el server por su propio WiFi, contra el servidor de speedtest.net más cercano; cada medición usa unos 100 MB.",
-           "server": "Servidor", "show_chart": "📈 24 h", "n_of": "{a} de {b} conectados", "n_home": "{a} de {b} en casa", "wifi": "WiFi",
+           "server": "Servidor", "last_24h": "Últimas 24 h", "n_of": "{a} de {b} conectados", "n_home": "{a} de {b} en casa", "wifi": "WiFi",
            "photos": "Fotos", "no_details": "Sin detalles mientras está afuera.",
            "printer_off": "no contesta (¿apagada?)", "lowest": "la más baja: {c} {p}%",
            "day_ago": "hace 24 h", "now": "ahora",
@@ -839,7 +847,7 @@ TEXT = {
            "p_hot": "server caliente", "p_internet": "internet con alertas", "p_cams": "{n} cámara(s) desconectada(s)",
            "cam_away": "Solo en casa: abrí {url} en el WiFi de casa", "no_image": "sin imagen",
            "connecting": "conectando…", "no_video": "No puedo mostrar esta cámara en vivo en esta pantalla",
-           "rec": "Grabaciones", "rec_sum": "{n} hoy · {gb} GB", "rec_none": "Todavía no hay clips",
+           "rec": "Grabaciones", "rec_sum": "{n} hoy · {gb} GB", "rec_off": "desactivadas", "n_cams": "{n} cámaras", "not_rec": "sin grabar", "rec_none": "Todavía no hay clips",
            "rec_today": "Hoy", "rec_yesterday": "Ayer",
            "rec_cant_play": "Este navegador no puede reproducir estos videos (H.265).", "rec_download": "Descargar",
            "rec_delete": "Borrar", "rec_del_one": "¿Borrar este clip? No se puede deshacer.",
@@ -863,9 +871,9 @@ PAGE = """<!doctype html>
   * { box-sizing:border-box; }
   body { margin:0; padding:16px; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui, sans-serif; }
   main { max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:4px 16px; }
   h1 { font-size:24px; margin:0; }
-  h2 { font-size:15px; margin:8px 0 0; color:var(--muted); font-weight:600; display:flex; justify-content:space-between; align-items:baseline; }
-  .overall { font-weight:600; margin-top:4px; }
+  .overall { font-weight:600; }
   .overall.ok { color:var(--ok); } .overall.bad { color:var(--warn); }
   .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
   .card { background:var(--card); border-radius:14px; padding:14px; box-shadow:0 1px 3px #0001; }
@@ -897,11 +905,29 @@ PAGE = """<!doctype html>
   summary::after { content:'›'; color:var(--muted); font-size:20px; line-height:1; transition:transform .15s; }
   details[open] > summary::after { transform:rotate(90deg); }
   .right { margin-left:auto; text-align:right; }
-  .netline { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; margin-top:4px; }
-  .netline button.link { margin-top:0; }
+  /* internet: what the dish says now | the last speed test, each under its own small heading */
+  .net { display:grid; grid-template-columns:auto auto 1fr; grid-template-areas:"a b ." "fa fb ."; gap:0 24px; margin-top:8px; }
+  .net .a { grid-area:a; } .net .b { grid-area:b; } .net .foot-a { grid-area:fa; } .net .foot-b { grid-area:fb; }
+  .net .b { border-left:1px solid var(--soft); padding-left:24px; }
+  .net .foot-b { padding-left:24px; }  /* lines up with the speed test above it */
+  .net:has(> .a.hidden) :is(.b, .foot-b) { border-left:0; padding-left:0; }
+  .net .b .stats { align-items:center; }
+  .net .foot-b:not(.hidden) { display:flex; align-items:center; align-self:start; min-height:34px; }  /* level with "Details" */
+  .net details { border:0; }
+  .net details > .more { contain:inline-size; }  /* its long notes wrap instead of widening the column */
+  .net:has(> .a.hidden) { grid-template-areas:"b b ." "fa fb ."; }
+  .hd2 { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+  @media (max-width:599px) {
+    .net { grid-template-columns:auto 1fr; grid-template-areas:"a a" "b b" "fa fb"; }
+    .net .b { border-left:0; padding-left:0; border-top:1px solid var(--soft); padding-top:10px; margin-top:10px; }
+    .net:has(> .a.hidden) { grid-template-areas:"b b" "fa fb"; }
+    .net:has(> .a.hidden) .b { border-top:0; padding-top:0; margin-top:0; }
+    .net .b .stats { column-gap:14px; }
+    .net .foot-b { justify-content:flex-end; padding-left:0; }
+    .cams .cam .name { font-size:11px; left:4px; bottom:4px; padding:1px 5px; }
+  }
   .pair { display:grid; gap:12px; }
   .pair:not(:has(> section:not(.hidden))) { display:none; }
-  @media (min-width:600px) { .stats > .sep:not(.hidden) { border-left:1px solid var(--soft); padding-left:20px; } }
   @media (min-width:900px) {
     main { max-width:1180px; }
     .pair { grid-template-columns:1fr 1fr; align-items:start; }
@@ -915,13 +941,15 @@ PAGE = """<!doctype html>
   }
   @media (min-width:1100px) {
     #srv .grid { grid-template-columns:repeat(6, 1fr); }
-    #srv .grid:has(> #wf.hidden) { grid-template-columns:repeat(5, 1fr); }
+    #srv .grid:has(> #plugbox.hidden) { grid-template-columns:repeat(5, 1fr); }
   }
   /* every section folds from its heading; folded, the heading shows a one-line summary */
   .sec-h { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
   .sec-h > :first-child { flex:1; }
   .sec-h::after { content:'›'; color:var(--muted); font-size:20px; line-height:1; transition:transform .15s; }
-  .sec-h:not(h2) { margin:-2px 0 2px; }
+  /* the whole heading row is the tap target, edge to edge of its card */
+  .sec > .sec-h { margin:-14px; padding:14px; min-height:48px; }
+  .sec:not(.shut) > .sec-h { margin-bottom:0; padding-bottom:4px; }
   .sec:not(.shut) > .sec-h::after { transform:rotate(90deg); }
   .sec.shut > :not(.sec-h), .sec:not(.shut) .sum, .sec.shut .open-only { display:none !important; }
   .sec-h:focus-visible, summary:focus-visible { outline:2px solid var(--line); outline-offset:2px; border-radius:6px; }
@@ -929,13 +957,26 @@ PAGE = """<!doctype html>
   .stats .big { font-size:26px; }
   .unit { font-size:15px; font-weight:600; color:var(--muted); }
   .more { padding:0 0 8px 18px; }
-  .card:has(> details[open]#disk_det), .card:has(> details[open]#cpu_det) { grid-column:1 / -1; }
-  .wf + .wf { margin-top:8px; }
+  #srv .grid > .card:has(> details[open]) { grid-column:1 / -1; }  /* an opened tile takes the whole row */
+  /* the server's cards sit inside its section, a shade off the card */
+  #srv .grid { margin-top:8px; }
+  #srv .grid > .card { background:var(--bg); box-shadow:none; }
+  #srv .grid > .card:not(.hidden) { display:flex; flex-direction:column; }  /* :not so .hidden still hides */
+  #srv .grid > .card > details, #srv .grid > .card > .bottom { margin-top:auto; }
+  .bottom { padding-top:8px; }
+  .chartbox { position:relative; margin-top:4px; }
+  .more.wide-more { padding-left:0; }
+  .chartbox .y { position:absolute; right:0; transform:translateY(-50%); font-size:11px; color:var(--muted); background:var(--bg); padding:0 3px; }
+  .recs { border-top:1px solid var(--soft); margin-top:12px; padding-top:4px; }
+  .recs .svc { border:0; padding:8px 0; }
   .chips { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:6px; }
   .chips > span { display:inline-flex; align-items:center; }
   .chips .sub { margin-left:4px; }
   button.link { background:none; border:0; padding:0; margin-top:6px; color:var(--line); font:inherit; font-size:13px; cursor:pointer; }
-  .cams { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin-top:8px; }
+  button.pill { align-self:flex-start; background:var(--soft); border-radius:999px; padding:8px 14px; margin:6px 0 0; }
+  button.pill:disabled { color:var(--muted); cursor:default; }
+  .net button.pill { margin:0 0 0 auto; }
+  .cams { display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:8px; margin-top:8px; }
   .cam { position:relative; aspect-ratio:16/9; background:var(--soft); border:0; border-radius:10px; padding:0; overflow:hidden; cursor:pointer; }
   .cam img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
   .cam .none { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px; }
@@ -967,23 +1008,25 @@ PAGE = """<!doctype html>
 
 <section class="card sec hidden" id="net">
   <div class="sec-h" data-s="net" role="button" tabindex="0"><span class="label">🌐 __INTERNET__</span><span class="sub right sum" id="net_sum"></span></div>
-  <div class="stats">
-    <div class="stats" id="net_now">
+  <div class="net">
+    <div class="a" id="net_now"><div class="hd2">__NET_NOW_T__</div><div class="stats">
       <div><div class="big" id="net_lat">–</div><div class="sub">__LATENCY__</div></div>
       <div><div class="big" id="net_down">–</div><div class="sub">⬇ __DOWN_NOW__</div></div>
-      <div><div class="big" id="net_up">–</div><div class="sub">⬆ __UP_NOW__</div></div></div>
-    <div class="stats sep hidden" id="net_speed">
+      <div><div class="big" id="net_up">–</div><div class="sub">⬆ __UP_NOW__</div></div></div></div>
+    <div class="b hidden" id="net_speed"><div class="hd2">🚀 __SPEED_T__</div><div class="stats">
       <div><div class="big" id="sp_down">–</div><div class="sub">⬇ __SPEED_DOWN__</div></div>
-      <div><div class="big" id="sp_up">–</div><div class="sub">⬆ __SPEED_UP__</div></div></div>
+      <div><div class="big" id="sp_up">–</div><div class="sub">⬆ __SPEED_UP__</div></div>
+      <button class="link pill" id="speed_btn">__TEST_NOW__</button></div></div>
+    <details class="foot-a" data-k="net"><summary class="sub">__DETAILS__</summary><div class="more" id="net_more"></div></details>
+    <div class="foot-b hidden" id="net_line"><span class="sub" id="speed_last"></span></div>
   </div>
-  <div class="netline hidden" id="net_line"><span class="sub" id="speed_last"></span><button class="link" id="speed_btn">__TEST_NOW__</button></div>
-  <details data-k="net"><summary class="sub">__DETAILS__</summary><div class="more" id="net_more"></div></details>
 </section>
 
-<section class="card sec hidden" id="cams"><div class="sec-h" data-s="cams" role="button" tabindex="0"><span class="label">📷 __CAMERA__</span><span class="sub right sum" id="cams_sum"></span></div>
-  <div class="cams" id="cam_grid"></div><div class="sub hidden" id="cam_away"></div></section>
-<section class="card hidden" id="rc"><details data-k="rec" id="rc_det"><summary><span class="label">🎞️ __REC__</span><span class="sub right" id="rc_sum"></span></summary>
-  <div class="more" id="rc_body"></div><div class="sub more hidden" id="rc_away"></div></details></section>
+<section class="card sec hidden" id="cams"><div class="sec-h" data-s="cams" role="button" tabindex="0"><span class="label">📹 __CAMERA__</span><span class="sub right sum" id="cams_sum"></span></div>
+  <div class="cams" id="cam_grid"></div><div class="sub hidden" id="cam_away"></div>
+  <div class="recs hidden" id="rc"><details data-k="rec" id="rc_det"><summary><span>🎞️ __REC__</span><span class="sub right" id="rc_sum"></span></summary>
+    <div class="more" id="rc_body"></div><div class="sub more hidden" id="rc_away"></div></details>
+    <div class="svc hidden" id="rc_off"><span>🎞️ __REC__</span><span class="sub">__REC_OFF__</span></div></div></section>
 <div class="live hidden" id="clip">
   <div class="live_top"><b id="clip_name"></b><span><button id="clip_del" aria-label="__REC_DELETE__" title="__REC_DELETE__">🗑️</button>
     <button id="clip_close" aria-label="close">✕</button></span></div>
@@ -999,28 +1042,32 @@ PAGE = """<!doctype html>
 <div class="pair"><section class="card sec hidden" id="pp"><div class="sec-h" data-s="pp" role="button" tabindex="0"><span class="label">🏠 __PEOPLE__</span><span class="sub right sum" id="pp_sum"></span></div><div id="pp_list"></div></section>
 <section class="card sec hidden" id="bk"><div class="sec-h" data-s="bk" role="button" tabindex="0"><span class="label">📷 __BACKUP__</span><span class="sub right sum" id="bk_sum"></span></div><div id="bk_list"></div></section></div>
 
-<section class="sec" id="srv"><h2 class="sec-h" data-s="srv" role="button" tabindex="0"><span>🖥️ __SERVER__</span>
-  <span class="sub right sum" id="srv_sum"></span><span class="sub right open-only" id="up"></span></h2>
+<section class="card sec" id="srv"><div class="sec-h" data-s="srv" role="button" tabindex="0"><span class="label">🖥️ __SERVER__</span>
+  <span class="sub right sum" id="srv_sum"></span><span class="sub right open-only" id="srv_wifi"></span></div>
 <div class="grid">
-  <div class="card"><div class="label">🔋 __BATTERY__</div><div class="big" id="bat">–</div><div class="sub" id="plug"></div>
-    <button class="link" id="chart_btn">__SHOW_CHART__</button></div>
-  <div class="card"><div class="label">🌡️ __TEMP__</div><div class="big" id="temp">–</div></div>
+  <div class="card"><div class="label">🔋 __BATTERY__</div><div class="big" id="bat">–</div><div class="sub" id="batsub"></div>
+    <details data-k="bat"><summary class="sub">__DETAILS__</summary><div class="more wide-more"><div class="label">📈 __LAST_24H__</div>
+      <div class="chartbox"><svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg><span class="y" id="chart_hi"></span><span class="y" id="chart_lo"></span></div>
+      <div class="axis sub"><span>__DAY_AGO__</span><span>__NOW__</span></div></div></details></div>
+  <div class="card"><div class="label">🌡️ __TEMP__</div><div class="big" id="temp">–</div><div class="sub" id="tempsub"></div>
+    <details data-k="temp"><summary class="sub">__DETAILS__</summary><div class="more wide-more"><div class="label">📈 __LAST_24H__</div>
+      <div class="chartbox"><svg id="tchart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg><span class="y" id="tchart_hi"></span><span class="y" id="tchart_lo"></span></div>
+      <div class="axis sub"><span>__DAY_AGO__</span><span>__NOW__</span></div></div></details></div>
   <div class="card"><div class="label">📊 __CPU__</div><div class="big" id="cpu">–</div>
-    <div class="bar"><i id="cpu_bar" style="width:0"></i></div><div class="sub" id="cpusub"></div>
+    <div class="bar"><i id="cpu_bar" style="width:0"></i></div><div class="sub">__CPU_OF_MAX__</div>
     <details data-k="cpu" id="cpu_det"><summary class="sub">__DETAILS__</summary><div class="more" id="cpu_more"></div></details></div>
-  <div class="card"><div class="label">🧠 __RAM__</div><div class="big" id="ram">–</div><div class="sub" id="ramsub"></div></div>
+  <div class="card"><div class="label">🧠 __RAM__</div><div class="big" id="ram">–</div><div class="sub" id="ramsub"></div>
+    <details data-k="ram"><summary class="sub">__DETAILS__</summary><div class="more" id="ram_more"></div></details></div>
   <div class="card"><div class="label">💾 __DISK__</div><div class="big" id="disk">–</div><div class="sub" id="disksub"></div>
     <details data-k="disk" class="hidden" id="disk_det"><summary class="sub">__DETAILS__</summary><div class="more" id="disk_more"></div></details></div>
-  <div class="card hidden" id="wf"><div class="label">📶 __WIFI__</div><div id="wf_list"></div></div>
-  <div class="card wide hidden" id="chartbox"><div class="label">📈 __HISTORY__</div>
-    <svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
-    <div class="axis sub"><span>__DAY_AGO__</span><span>__NOW__</span></div></div>
-  <div class="card wide"><div class="label">⚙️ __SERVICES__</div><div class="chips" id="svcs"></div></div>
+  <div class="card hidden" id="plugbox"><div class="label">🔌 __THE_PLUG__</div><div class="big" id="plug">–</div><div class="sub" id="plugsub"></div>
+    <details data-k="plug"><summary class="sub">__DETAILS__</summary><div class="more" id="plug_more"></div></details></div>
+  <div class="card wide"><div class="axis"><span class="label">⚙️ __SERVICES__</span><span class="sub" id="up"></span></div><div class="chips" id="svcs"></div></div>
 </div></section>
 
 <section class="card sec hidden" id="dv"><div class="sec-h" data-s="dv" role="button" tabindex="0"><span class="label" id="dv_title"></span><span class="sub right sum" id="dv_sum"></span></div><div id="dv_list"></div></section>
-<section class="card hidden" id="pr"><details data-k="printer"><summary><span class="label">🖨️ __PRINTER__</span><span class="sub right" id="pr_sum"></span></summary>
-  <div class="ink" id="pr_ink"></div></details></section>
+<section class="card sec hidden" id="pr"><div class="sec-h" data-s="pr" role="button" tabindex="0"><span class="label">🖨️ __PRINTER__</span><span class="sub right sum" id="pr_sum"></span></div>
+  <div class="ink" id="pr_ink"></div></section>
 <div class="foot" id="foot"></div>
 </main>
 <script>
@@ -1049,9 +1096,9 @@ document.addEventListener('toggle', e => { if (e.target.dataset.k) remember(e.ta
 document.querySelectorAll('details[data-k]').forEach(d => { d.open = open.has(d.dataset.k); });
 const fold = (k, summary, body) =>
   `<details data-k="${esc(k)}"${open.has(k) ? ' open' : ''}><summary>${summary}</summary><div class="more">${body}</div></details>`;
-// folded sections, remembered like the open details; everything starts unfolded
-let shut = new Set();
-try { shut = new Set(JSON.parse(localStorage.getItem('shut') || '[]')); } catch (e) {}
+// folded sections, remembered like the open details; everything but the printer starts unfolded
+let shut = new Set(['pr']);
+try { shut = new Set(JSON.parse(localStorage.getItem('shut') || '["pr"]')); } catch (e) {}
 const isShut = k => shut.has(k);
 function shutSection(k, on) {
   on ? shut.add(k) : shut.delete(k);
@@ -1068,8 +1115,6 @@ document.querySelectorAll('.sec-h').forEach(h => {
   h.onclick = () => shutSection(k, !isShut(k));
   h.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); h.click(); } };
 });
-$('chart_btn').onclick = () => { remember('chart', !open.has('chart')); show('chartbox', open.has('chart')); };
-show('chartbox', open.has('chart'));
 
 async function refresh() {
   try {
@@ -1078,16 +1123,16 @@ async function refresh() {
     $('bat').textContent = b.percentage != null ? b.percentage + '%' : '–';
     const w = s.system && s.system.watts, wt = k => w != null ? T[k].replace('{w}', num(w, 1)) : '';
     // the current's sign differs between phones, so "charging at" goes by what Android says it is doing
-    $('plug').textContent = (b.plugged && b.plugged !== 'UNPLUGGED' ? '⚡ ' + (b.status === 'CHARGING' && wt('charges_w') || T.charging)
-                             : T.not_charging + (w != null ? ' · ' + wt('uses_w') : '')) +
-      (sp && !sp.error ? ' · ' + (sp.on ? T.plug_on + (sp.watts != null ? ' ' + num(sp.watts) + ' W' : '') : T.plug_off.replace('{low}', sp.low)) : '');
+    $('batsub').textContent = b.plugged && b.plugged !== 'UNPLUGGED' ? '⚡ ' + (b.status === 'CHARGING' && wt('charges_w') || T.charging)
+                            : wt('uses_w') || T.not_charging;
     const t = b.temperature;
-    $('temp').textContent = t != null ? num(t, 1) + '°C' : '–';
+    $('temp').textContent = t != null ? num(t, 1) + ' °C' : '–';
     $('temp').style.color = t == null ? '' : t >= 40 ? BAD : t >= 35 ? WARN : '';
+    $('tempsub').textContent = t == null ? '' : t >= 40 ? T.temp_hot : t >= 35 ? T.temp_warm : T.temp_ok;
     $('ram').textContent = num(s.memory.available_mb / 1024, 1) + ' GB';
-    $('ramsub').textContent = '/ ' + num(s.memory.total_mb / 1024, 1) + ' GB';
+    $('ramsub').textContent = T.ram_of.replace('{t}', num(s.memory.total_mb / 1024, 1) + ' GB');
     $('disk').textContent = num(s.disk.free_gb) + ' GB';
-    $('disksub').textContent = '/ ' + num(s.disk.total_gb) + ' GB';
+    $('disksub').textContent = T.of.replace('{t}', num(s.disk.total_gb) + ' GB');
     drawDisk(s.disk);
     drawCpu(s.system);
     $('up').textContent = s.uptime_h != null ? T.uptime + ' ' + ago(Math.round(s.uptime_h * 60)) : '';
@@ -1096,7 +1141,9 @@ async function refresh() {
       if (v.players) detail = v.players.length ? ' · ' + v.players.length + ' ' + T.players + ': ' + esc(v.players.join(', ')) : ' · ' + T.nobody;
       return `<span>${dot(v.ok ? OK : BAD)}${T.svc[v.name] || v.name}<span class="sub">${detail}</span></span>`;
     }).join(''));
-    drawChart(s.history, sp);
+    drawCharts(s.history, sp);
+    drawRam(s.memory, s.system);
+    drawPlug(sp, h.devices, s.plug_ip);
     // charge-cycling reminder, unless a smart plug does it automatically
     const p = b.percentage, plugged = b.plugged && b.plugged !== 'UNPLUGGED';
     $('alert').textContent = s.battery_stale ? T.api_asleep
@@ -1108,8 +1155,9 @@ async function refresh() {
     drawInternet(h.starlink, s.speed, s.time);
     drawCameras(s.cameras, s.self_ip);
     drawRecordings(s.recordings, s.recorder, s.self_ip);
+    show('cams', s.cameras || (s.recordings && !s.recordings.off));  // recordings live in this card
     drawPeople(people, h);
-    drawConnection(h.devices, s);
+    drawServerWifi(h.devices, s.self_ip);
     drawDevices(h.devices, (people ? people.map(x => x.ip) : []).concat([s.self_ip, s.plug_ip]));
     drawPrinter(h.printer);
     drawOverall(s, h);
@@ -1131,30 +1179,31 @@ function drawDisk(d) {
   }).join('') + row(T.disk_free, num(d.free_gb, 1) + ' GB'));
 }
 
-// clock-based figure (Android hides real CPU use), the load in words, then each of our services
+// clock-based figure (Android hides real CPU use), then each of our services' share of the whole
 function drawCpu(y) {
   const p = y ? y.cpu_pct : null;
   $('cpu').textContent = p != null ? p + '%' : '–';
   $('cpu').style.color = p == null ? '' : p >= 95 ? BAD : p >= 80 ? WARN : '';
   $('cpu_bar').style.width = (p || 0) + '%';
-  $('cpusub').textContent = y && y.load_word ? T[y.load_word] : '';
   if (!y) return;
-  set('cpu_more', (y.services || []).map(v => row(T.svc[v.name] || esc(v.name), num(v.cpu_pct, 1) + '% · ' + v.mem_mb + ' MB') +
+  set('cpu_more', `<div class="sub" style="margin:4px 0 2px">${T.cpu_each}</div>` +
+    (y.services || []).map(v => row(T.svc[v.name] || esc(v.name), num(v.cpu_pct, 1) + '%') +
       `<div class="bar"><i style="width:${Math.min(100, v.cpu_pct)}%"></i></div>`).join('') +
-    (y.load != null ? `<div class="sub">${T.load.replace('{l}', num(y.load, 1)).replace('{n}', y.ncpu)}</div>` : '') +
     `<div class="sub" style="margin-top:6px">${T.cpu_note}</div>`);
 }
 
 // what a folded section shows in its heading
 function drawSums(s, h) {
   const sl = h.starlink, last = s.speed && s.speed.last, b = s.battery || {}, cpu = s.system && s.system.cpu_pct;
-  $('net_sum').textContent = [sl && !sl.error ? sl.latency_ms + ' ms' : '', last ? '⬇ ' + num(last[1], 0) + ' Mbps' : '']
+  $('net_sum').textContent = [sl && !sl.error ? sl.latency_ms + ' ms' : '', last ? '🚀 ⬇ ' + mb(last[1]) + ' Mbps' : '']
     .filter(Boolean).join(' · ');
-  $('cams_sum').textContent = s.cameras ? s.cameras.names.join(' · ') : '';
+  const rc = s.recorder, rs = s.recordings;
+  $('cams_sum').textContent = !s.cameras ? '' : [T.n_cams.replace('{n}', s.cameras.names.length),
+    rc ? T.rec_sum.replace('{n}', rc.today).replace('{gb}', num(rc.bytes / 1e9, 1)) : rs ? T.not_rec : ''].filter(Boolean).join(' · ');
   const people = Array.isArray(h.people) ? h.people : [];
   $('pp_sum').textContent = T.n_home.replace('{a}', people.filter(x => x.home).length).replace('{b}', people.length);
-  $('srv_sum').textContent = [b.percentage != null ? b.percentage + '%' : '', b.temperature != null ? num(b.temperature, 1) + '°C' : '',
-    cpu != null ? T.cpu + ' ' + cpu + '%' : ''].filter(Boolean).join(' · ');
+  $('srv_sum').textContent = [b.percentage != null ? '🔋 ' + b.percentage + '%' : '', b.temperature != null ? num(b.temperature, 1) + ' °C' : '',
+    cpu != null ? T.cpu.toLowerCase() + ' ' + cpu + '%' : ''].filter(Boolean).join(' · ');
 }
 
 function drawOverall(s, h) {
@@ -1193,15 +1242,17 @@ function drawInternet(sl, sp, now) {
   }
   const unit = u => ` <span class="unit">${u}</span>`;
   set('net_lat', sl.latency_ms + unit('ms'));
-  set('net_down', num(sl.down_mbps, 1) + unit('Mbps'));
-  set('net_up', num(sl.up_mbps, 1) + unit('Mbps'));
+  set('net_down', mb(sl.down_mbps) + unit('Mbps'));
+  set('net_up', mb(sl.up_mbps) + unit('Mbps'));
   set('net_more', row(T.obstructed, num(sl.obstructed_pct) + '%') + row(T.dish_up, ago(Math.round(sl.uptime_h * 60))) +
     (sl.alerts.length ? row(T.alerts, '⚠️ ' + esc(sl.alerts.join(', ')), 'color:var(--warn)') : '') +
     `<div class="sub" style="padding-top:6px">${T.use_note}</div>` + speedRows(sp));
 }
 
 // speed test: the last result on the card, the last 24 h under Details, a button to test now
-const mbps = r => `⬇ ${num(r[1], 1)} ⬆ ${num(r[2], 1)} Mbps · ${r[3]} ms`;
+// a tiny negative reading must not show as "-0,0"
+const mb = v => num(Math.max(0, v), 1);
+const mbps = r => `⬇ ${mb(r[1])} ⬆ ${mb(r[2])} Mbps · ${r[3]} ms`;
 // what the button says after a tap, kept for a while (browser clock); the phone's clock for the rest
 let speedMsg = null, speedMsgUntil = 0;
 function drawSpeed(sp, now) {
@@ -1210,10 +1261,10 @@ function drawSpeed(sp, now) {
   if (!sp) return;
   const l = sp.last, msg = Date.now() < speedMsgUntil ? speedMsg : null;
   const unit = ' <span class="unit">Mbps</span>';
-  set('sp_down', l ? num(l[1], 1) + unit : '–');
-  set('sp_up', l ? num(l[2], 1) + unit : '–');
+  set('sp_down', l ? mb(l[1]) + unit : '–');
+  set('sp_up', l ? mb(l[2]) + unit : '–');
   set('speed_last', sp.error && !sp.running ? `<span style="color:var(--bad)">⚠️ ${T.speed_fail}</span>`
-    : l ? '🚀 ' + T.speed_ago.replace('{t}', ago(Math.max(0, Math.round((now - l[0]) / 60)))) : '🚀 ' + T.speed_none);
+    : l ? T.speed_ago.replace('{t}', ago(Math.max(0, Math.round((now - l[0]) / 60)))) : T.speed_none);
   const wait = now < sp.next_ok;
   $('speed_btn').textContent = sp.running ? T.testing : msg || (wait ? T.speed_wait : T.test_now);
   $('speed_btn').disabled = sp.running || wait || msg === T.testing;
@@ -1283,11 +1334,14 @@ let recHome = false, recLoaded = false, recs = [], recCam = 0, recDay = null, re
 const enc = encodeURIComponent;
 const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const recUrl = (c, d, f) => '/rec/' + enc(c) + '/' + enc(d) + '/' + enc(f);
+// inside the cameras card: a row that says "off" while nothing is recorded, else the clips under a fold
 function drawRecordings(r, rc, selfIp) {
   show('rc', r);
+  show('rc_off', r && r.off);
+  show('rc_det', r && !r.off);
   recHome = !!(r && r.home);
-  if (!r) return;
-  $('rc_sum').textContent = rc ? T.rec_sum.replace('{n}', rc.today).replace('{gb}', num(rc.bytes / 1e9, 1)) : '';
+  if (!r || r.off) return;
+  $('rc_sum').textContent = rc ? T.rec_sum.replace('{n}', rc.today).replace('{gb}', num(rc.bytes / 1e9, 1)) : T.rec_off;
   show('rc_body', recHome);
   show('rc_away', !recHome);
   if (!recHome) $('rc_away').textContent = T.cam_away.replace('{url}', 'http://' + (selfIp || 'server') + ':' + (location.port || 80));
@@ -1508,7 +1562,8 @@ view.addEventListener('pointercancel', lift);
 
 function wifiText(d) {
   const weak = d.signal != null && d.signal < -75;
-  const how = d.conn === 'wired' ? T.wired : d.conn + ' GHz' + (d.signal != null ? ' · ' + d.signal + ' dBm' : '');
+  const ghz = parseFloat(d.conn);
+  const how = (d.conn === 'wired' ? T.wired : isNaN(ghz) ? T.wifi : num(ghz) + ' GHz') + (d.signal != null && d.conn !== 'wired' ? ' · ' + d.signal + ' dBm' : '');
   return !d.online ? T.offline + ' · ' + T.seen.replace('{m}', ago(d.seen_min_ago))
        : !d.ip ? '⚠️ ' + T.no_ip
        : esc(d.ip) + ' · ' + how + (weak ? ' ⚠️ ' + T.weak : '');
@@ -1529,11 +1584,14 @@ function drawPeople(people, h) {
   show('pp', people);
   if (people) set('pp_list', people.map(x => {
     const d = devs.find(d => d.last_ip === x.ip), mine = folders.filter(f => from(f).includes(x.name));
-    const where = x.home ? T.home : T.away + (x.seen_min_ago != null ? ' · ' + T.seen.replace('{m}', ago(x.seen_min_ago)) : '');
-    const photos = !mine.length ? '' : ' · 📷 ' + (mine.every(f => !f.need_files) ? '✓' : Math.min(...mine.map(f => f.pct)) + '%');
+    // the dot says home or away; the right side says how the photo backup goes (when the server has one)
+    const photos = !h.backup || h.backup.error ? '' : T.bk + ': ' + (!mine.length ? T.bk_none
+      : mine.every(f => !f.need_files) ? T.bk_ok : Math.min(...mine.map(f => f.pct)) + '%');
+    const seen = !x.home && x.seen_min_ago != null ? `<div class="sub">${T.seen.replace('{m}', ago(x.seen_min_ago))}</div>` : '';
     let body = (d && d.online ? row(T.wifi, wifiText(d)) : '') + mine.map(f => backupRows(f, bk.mb_s, mine.length > 1 ? '' : T.photos)).join('');
-    if (!body) body = `<div class="sub">${T.no_details}</div>`;
-    return fold('p:' + x.name, `${dot(x.home ? OK : OFF)}<b>${esc(x.name)}</b><span class="sub right">${where}${photos}</span>`, body);
+    if (!body) body = seen || `<div class="sub">${T.no_details}</div>`;
+    return fold('p:' + x.name, `${dot(x.home ? OK : OFF)}<b${x.home ? '' : ' style="color:var(--muted)"'}>${esc(x.name)}</b>` +
+      `<span class="sub right">${photos}</span>`, body);
   }).join(''));
   // folders from phones that aren't a person above get their own card
   const names = people ? people.map(x => x.name) : [];
@@ -1543,24 +1601,46 @@ function drawPeople(people, h) {
   $('bk_sum').textContent = !rest.length ? '' : rest.every(f => !f.need_files) ? T.up_to_date : Math.min(...rest.map(f => f.pct)) + '%';
 }
 
-// the server's own Wi-Fi and its plug's, from the router's list, in a card of the Server section
-function drawConnection(dv, s) {
-  const devs = (dv && dv.devices) || [];
-  const rows = [['📱 ' + T.this_server, s.self_ip], ['🔌 ' + T.the_plug, s.plug_ip]]
-    .map(([name, ip]) => [name, ip && devs.find(d => d.last_ip === ip)]).filter(([, d]) => d);
-  show('wf', rows.length);
-  set('wf_list', rows.map(([name, d]) => `<div class="wf">${dot(d.online ? OK : BAD)}${name}<div class="sub">${wifiText(d)}</div></div>`).join(''));
+// the server's own Wi-Fi, from the router's list, on the right of the Server heading
+const routerDev = (dv, ip) => ip && ((dv && dv.devices) || []).find(d => d.last_ip === ip);
+function drawServerWifi(dv, ip) {
+  const d = routerDev(dv, ip);
+  set('srv_wifi', d ? '📶 ' + wifiText(d) : '');
+}
+
+// the smart plug's card: on or off, and that the panel can reach it; its rule and Wi-Fi under Details
+function drawPlug(sp, dv, ip) {
+  show('plugbox', sp);
+  if (!sp) return;
+  $('plug').textContent = sp.error ? T.plug_noanswer : sp.on ? T.plug_on : T.plug_off;
+  $('plug').style.color = sp.error ? BAD : '';
+  set('plugsub', sp.error ? '' : dot(OK) + T.plug_reach);
+  const d = routerDev(dv, ip);
+  set('plug_more', (sp.error ? `<div class="sub" style="color:var(--bad)">⚠️ ${esc(sp.error)}</div>`
+      : row(T.plug_now, sp.on ? T.plug_to_high.replace('{high}', sp.high) + (sp.watts != null ? ' · ' + num(sp.watts) + ' W' : '')
+                              : T.plug_to_low.replace('{low}', sp.low))) +
+    (d ? row(T.wifi, wifiText(d)) : '') +
+    (sp.error ? '' : `<div class="sub" style="padding-top:6px">${T.plug_rule.replace('{high}', sp.high).replace('{low}', sp.low)}</div>`));
+}
+
+// the RAM tile's details: what each of our services holds, then Android and every other app
+function drawRam(m, y) {
+  const used = m.total_mb - m.available_mb, svcs = ((y && y.services) || []).slice().sort((a, b) => b.mem_mb - a.mem_mb);
+  const ours = svcs.reduce((a, v) => a + v.mem_mb, 0);
+  const bar = mb => `<div class="bar"><i style="width:${Math.min(100, mb * 100 / m.total_mb)}%"></i></div>`;
+  set('ram_more', `<div class="sub" style="margin:4px 0 2px">${T.ram_each}</div>` +
+    svcs.map(v => row(T.svc[v.name] || esc(v.name), v.mem_mb + ' MB') + bar(v.mem_mb)).join('') +
+    (used > ours ? row(T.ram_rest, num((used - ours) / 1024, 1) + ' GB') + bar(used - ours) : ''));
 }
 
 const KINDS = ['camera', 'computer', 'phone', 'network', 'other'];
-const ICON = {camera: '📷', computer: '💻', phone: '📱', network: '🌐', other: '🔌'};
+const ICON = {camera: '📹', computer: '💻', phone: '📱', network: '🌐', other: '🔌'};
 function drawDevices(dv, hide) {
   show('dv', dv && dv.devices);
   if (!(dv && dv.devices)) return;
   // a device that never got an address has no last_ip: never hide it by matching a missing one
   const list = dv.devices.filter(d => !(d.last_ip && hide.includes(d.last_ip)));
-  $('dv_title').textContent = '📶 ' + T.devices + (dv.ssid ? ' ' + T.on + ' ' + dv.ssid : '') +
-    ' (' + list.filter(d => d.online).length + ')';
+  $('dv_title').textContent = '📶 ' + T.devices + (dv.ssid ? ' ' + T.on + ' ' + dv.ssid : '');
   $('dv_sum').textContent = T.n_of.replace('{a}', list.filter(d => d.online).length).replace('{b}', list.length);
   set('dv_list', KINDS.map(k => {
     const g = list.filter(d => d.kind === k);
@@ -1569,8 +1649,9 @@ function drawDevices(dv, hide) {
     const sum = `${ICON[k]} ${T[k]}<span class="sub right">${T.n_of.replace('{a}', on).replace('{b}', g.length)}` +
       `${k === 'camera' && (on < g.length || noip) ? ' ⚠️' : ''}</span>`;
     return fold('k:' + k, sum, g.map(d => {
-      const weak = d.signal != null && d.signal < -75;
-      return row(dot(d.online && d.ip ? OK : d.online ? WARN : BAD) + esc(d.name), wifiText(d), weak ? 'color:var(--warn)' : '');
+      // offline is normal (a phone that left): grey, not red; a weak signal only matters while connected
+      const weak = d.online && d.signal != null && d.signal < -75;
+      return row(dot(d.online && d.ip ? OK : d.online ? WARN : OFF) + esc(d.name), wifiText(d), weak ? 'color:var(--warn)' : '');
     }).join(''));
   }).join(''));
 }
@@ -1588,16 +1669,25 @@ function drawPrinter(pr) {
     `<div title="${esc(T[k.color] || k.color)}"><div class="tank"><i style="height:${k.level}%;background:${INK[k.color] || '#888'}"></i></div>${k.level}%</div>`).join(''));
 }
 
-function drawChart(h, plug) {
-  const svg = $('chart');
-  if (!h.length) { svg.innerHTML = ''; return; }
-  const t0 = h[0][0], t1 = Math.max(h[h.length - 1][0], t0 + 1);
-  const x = t => (t - t0) / (t1 - t0) * 300, y = p => 100 - p;
-  const lo = plug && !plug.error ? plug.low : 30, hi = plug && !plug.error ? plug.high : 80;
-  const pts = h.map(r => x(r[0]).toFixed(1) + ',' + y(r[1]).toFixed(1)).join(' ');
-  svg.innerHTML =
-    `<rect x="0" y="${y(hi)}" width="300" height="${hi - lo}" fill="var(--ok)" opacity="0.08"/>` +   // the healthy charge band
+// one line over the last 24 h, from bottom to top of the scale; two labels on the right
+// (the svg stretches, so the labels sit outside it). band = [lo, hi] shaded, or null
+function drawLine(id, rows, bottom, top, labels, band, unit) {
+  const svg = $(id);
+  if (!rows.length) { svg.innerHTML = ''; return; }
+  const t0 = rows[0][0], t1 = Math.max(rows[rows.length - 1][0], t0 + 1);
+  const x = t => (t - t0) / (t1 - t0) * 300, y = v => 100 - (v - bottom) * 100 / (top - bottom);
+  const pts = rows.map(r => x(r[0]).toFixed(1) + ',' + y(r[1]).toFixed(1)).join(' ');
+  [['_hi', labels[1]], ['_lo', labels[0]]].forEach(([k, v]) => { $(id + k).textContent = v + unit; $(id + k).style.top = y(v) + '%'; });
+  svg.innerHTML = (band ? `<rect x="0" y="${y(band[1])}" width="300" height="${y(band[0]) - y(band[1])}" fill="var(--ok)" opacity="0.08"/>` : '') +
     `<polyline points="${pts}" fill="none" stroke="var(--line)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+}
+function drawCharts(h, plug) {
+  const lo = plug && !plug.error ? plug.low : 30, hi = plug && !plug.error ? plug.high : 80;
+  drawLine('chart', h.map(r => [r[0], r[1]]), 0, 100, [lo, hi], [lo, hi], '%');   // the healthy charge band
+  // temperature: a scale a little wider than the day's lowest and highest (rows without one are 0)
+  const t = h.filter(r => r[2] > 0).map(r => [r[0], r[2]]), v = t.map(r => r[1]);
+  const min = Math.floor(Math.min(...v)), max = Math.ceil(Math.max(...v));
+  if (t.length) drawLine('tchart', t, min - 2, Math.max(max, min + 3) + 2, [min, Math.max(max, min + 3)], null, ' °C');
 }
 refresh(); setInterval(refresh, 10000);
 </script>

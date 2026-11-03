@@ -4,7 +4,7 @@ A web page on the server that tells you, at a glance, whether everything at home
 Open it from any phone or computer on your Wi-Fi at `http://<server-ip>:8080`, or from anywhere
 with Tailscale on at `http://<server-tailscale-ip>:8080` (step 8 prints both addresses).
 
-<img src="img/panel.jpg" alt="The status panel on a phone: title 'Our house', 'Everything works', internet latency and speed in use, who's home with each person's photo backup, the server's battery with a 24-hour chart, temperature, processor, free memory and storage, the server and smart plug Wi-Fi, services, devices on the Wi-Fi grouped by type, and printer ink." width="320">
+<img src="img/panel.jpg" alt="The status panel on a phone: title 'Our house', 'Everything works', internet latency and speed in use, who's home with each person's photo backup, the server's battery, temperature, processor, memory, storage and smart plug, services, devices on the Wi-Fi grouped by type, and printer ink." width="320">
 
 *Example data. Yours shows your house.*
 
@@ -13,8 +13,10 @@ with Tailscale on at `http://<server-tailscale-ip>:8080` (step 8 prints both add
 Right after `bash scripts/08-panel.sh`, with an empty `.env`, the page has:
 
 - a line on top: **✓ Everything works**, or what doesn't;
-- the **server**: battery with a 24-hour chart and how many watts go in or out, temperature, the
-  processor, free memory and storage, and (with the router card) the server's and the plug's Wi-Fi;
+- the **server**: battery and how many watts go in or out, temperature, the processor, memory and
+  storage, each with **Details** (24-hour charts for battery and temperature, what each service uses
+  for the processor and memory, how the storage is split), and (with the router card) the server's
+  own Wi-Fi in its heading;
 - **services**: whether remote access is running, plus ad blocking, the game and photo backup once
   you install them. The game also shows who's playing.
 
@@ -28,16 +30,16 @@ ones you don't have.
 | Name on top | nothing | `PANEL_TITLE="Our house"` |
 | Spanish | nothing | `PANEL_LANG=es` |
 | 🛰️ Internet | a Starlink dish | `PANEL_STARLINK=yes` |
-| 🚀 Speed test | nothing; each test moves ~100 MB, mind data caps | `PANEL_SPEEDTEST=4`: tests a day, 0 to 6 (0 = only the "Test now" button) |
+| 🚀 Speed test | nothing; each test moves ~100 MB, mind data caps | `PANEL_SPEEDTEST=4`: tests a day, 0 to 6 (0 = only the "Test again" button) |
 | 🏠 Who's home | each person's phone with a fixed IP in the router | `PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"` (simple names: letters, numbers, - or _) |
 | 📶 Devices on the Wi-Fi | a TP-Link router (tested: Archer AX23) | `PANEL_ROUTER=tplink`, `ROUTER_URL`, `ROUTER_PASSWORD` |
 | Device names | the router card | `PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Front door camera,…"` |
 | Hide devices | the router card | `PANEL_DEVICE_HIDE="F4-70-18-00-00-03,…"`, e.g. a camera's Wi-Fi you turned off because it's on cable (otherwise it shows as an offline camera for a month) |
 | 🖨️ Ink levels | an Epson printer with a fixed IP | `PANEL_PRINTER_IP=192.168.1.40` |
 | 📷 Photo backup | step 9, run with the same name as in `PANEL_PEOPLE` | nothing: step 9 adds it |
-| 🔌 Smart plug | step 10, and a fixed IP for the plug in the router | nothing: step 10 adds it to the battery card. Optional `CHARGE_LOW` / `CHARGE_HIGH` (default 30 and 80) |
+| 🔌 Smart plug | step 10, and a fixed IP for the plug in the router | nothing: step 10 adds its own card to the server section (on or off; under Details, its rule and Wi-Fi). Optional `CHARGE_LOW` / `CHARGE_HIGH` (default 30 and 80) |
 | 📷 Cameras | step 11, and cameras with RTSP and fixed IPs | `PANEL_CAMERAS="Front=192.168.1.50:ABCDEF,…"`, then `bash scripts/11-cameras.sh` (not step 8) |
-| 🎞️ Recordings | step 12 (motion clips) | nothing: step 12 adds it. `PANEL_RECORDINGS=no` hides it |
+| 🎞️ Recordings | step 12 (motion clips) | nothing: a line in the cameras card, "off" until step 12 records. `PANEL_RECORDINGS=no` hides it |
 | 💾 Disk split | nothing | the storage card gets a **Details** line showing how the space is shared. Optional `DISK_RECORDINGS_GB`, `DISK_BACKUP_GB`, `DISK_BACKUP_PAUSE`, `DISK_KEEP_FREE_GB` |
 
 ## Step by step
@@ -84,20 +86,21 @@ To change anything later (a name, a person, a new card), edit `.env` and run
 | 🖨️ Ink | Epson's own SNMP status query (`@BDC ST2`), which works on old models like the XP-211 that don't fill the standard printer-supplies table. |
 | 📷 Photo backup | Syncthing's local API: whether each phone is connected, how much is left, the download speed. Folders from phones that aren't in `PANEL_PEOPLE` get a card of their own. |
 | 🔌 Smart plug | the panel itself switches the plug: it checks every minute, cuts the charger at 80% and turns it back on at 30% (`CHARGE_HIGH` and `CHARGE_LOW`). If the battery can't be read for 30 minutes it turns the charger on, and the plug comes back on after a power cut, so a glitch ends with a full battery, never a flat one. It talks to the plug over the home network only. |
-| 🚀 Speed test | [speedtest-go](https://github.com/showwin/speedtest-go) (a Termux package) against the nearest speedtest.net server: 10 s down, 15 s up, ~100 MB. It runs on the server, so the server's own Wi-Fi is part of the result: on 2.4 GHz it can't show more than about two thirds of the link speed, even if the internet is faster. The last result stays on the card, the last 24 h under Details. "Test now" works only from the panel's own page and waits 5 minutes between tests. |
+| 🚀 Speed test | [speedtest-go](https://github.com/showwin/speedtest-go) (a Termux package) against the nearest speedtest.net server: 10 s down, 15 s up, ~100 MB. It runs on the server, so the server's own Wi-Fi is part of the result: on 2.4 GHz it can't show more than about two thirds of the link speed, even if the internet is faster. The last result stays on the card, the last 24 h under Details. "Test again" works only from the panel's own page and waits 5 minutes between tests. |
 | 📷 Cameras | home only, decided by the address the request comes from (Tailscale counts as away). For each camera the panel runs one ffmpeg that decodes only full frames from go2rtc's small stream, so a new still arrives with each full frame the camera sends (every ~4 s on the tested cameras); it starts when someone opens the page and stops 30 s after the last request. The first still takes a few seconds. Tapping a camera opens live video, which the panel passes through from go2rtc (it only listens on the phone); if the screen can't play the big stream within 5 s, it switches to the small one. |
-| 🎞️ Recordings | the clips step 12 saved in `~/recordings`. It is **closed by default** and loads nothing until you open it. Then: pick a camera, a day (today first), and tap a thumbnail to play the clip full screen, with ◀ ▶ for the previous or next clip. Seeking works. Some browsers can't play H.265 video: then it says "This browser can't play these videos (H.265)." and offers a **Download** link. It shows only at home (like live video), and only if step 12 is installed or clips exist. Away from home it says "Home only: open … on the home Wi-Fi". `PANEL_RECORDINGS=no` hides it for everyone and the clips can't be reached by address either. **Deleting:** 🗑️ in the player deletes that clip, and "Delete the whole day" under the days deletes one camera's day (it says how many clips and how much space, and asks twice). Anyone at home can do it, after the question, and nothing brings a clip back. A clip still being recorded is never deleted. The panel can't change settings. |
+| 🎞️ Recordings | a line at the bottom of the cameras card, with the clips step 12 saved in `~/recordings`. Without step 12 and with no clips it just says "off". It is **closed by default** and loads nothing until you open it. Then: pick a camera, a day (today first), and tap a thumbnail to play the clip full screen, with ◀ ▶ for the previous or next clip. Seeking works. Some browsers can't play H.265 video: then it says "This browser can't play these videos (H.265)." and offers a **Download** link. The clips show only at home (like live video). Away from home it says "Home only: open … on the home Wi-Fi". `PANEL_RECORDINGS=no` hides it for everyone and the clips can't be reached by address either. **Deleting:** 🗑️ in the player deletes that clip, and "Delete the whole day" under the days deletes one camera's day (it says how many clips and how much space, and asks twice). Anyone at home can do it, after the question, and nothing brings a clip back. A clip still being recorded is never deleted. The panel can't change settings. |
 | 💾 Free storage | free space, and under **Details** one row per kind of file: `Photo backup 20 / 50 GB (40%)`, `Recordings 3.1 / 10 GB (31%)`, then `Free`. A kind with no share set shows only its size. Photo backup comes from Syncthing, recordings from the recorder. With `DISK_BACKUP_GB` set, the top line says "photo backup near its limit" over 90% of it, and with `DISK_BACKUP_PAUSE=yes` the panel pauses the photo backup folders at 100% ("photo backup paused: at its limit") and resumes them under 95%. It only resumes folders it paused itself, and never deletes a photo. Recordings at their share give **no** warning: the oldest clip is deleted instead. |
-| 📊 Processor | how hard the phone is working: each group of cores' speed right now against its top speed, averaged over the last 10 s, and the load in words (calm, busy, very busy: load per core under 1, under 2, 2 or more). Android doesn't let apps read the processor's real use, its temperature sensors or the network totals, so this is the closest it gets without root. **Details** lists CPU (as a share of the whole phone) and memory for each of our own services; helpers like ffmpeg count under the service that started them, and "Other" is the rest of what Termux runs. Other apps and Android itself can't be seen. |
+| 📊 Processor | how hard the phone is working: each group of cores' speed right now against its top speed, averaged over the last 10 s. Android doesn't let apps read the processor's real use, its temperature sensors or the network totals, so this is the closest it gets without root. **Details** lists each of our own services' share of the whole processor; helpers like ffmpeg count under the service that started them, and "Other" is the rest of what Termux runs. Other apps and Android itself can't be seen. |
+| 🧠 Memory | free RAM out of the total. **Details** lists the memory each of our own services holds, biggest first, then "Android and the rest" (everything else in use). |
 | 🔋 Watts | the battery's voltage times its current, from Termux:API: "using 0.3 W" on battery, "charging at 12 W" on the charger. |
 | ⚠️ Top line, recorder | "⚠️ Front looks obstructed, check it (still recording)" or "(recording paused)", "Front not recording" (the recorder can't see that camera), "recorder stopped" (the panel hasn't heard from it for a minute) and "Disk almost full: recording stopped". They clear by themselves. |
 
 When the recorder runs, the camera stills come from the recorder's own picture check instead of a second ffmpeg per camera, which saves CPU. If the recorder is off or restarting, the panel makes the stills itself, as before.
 
 Every section folds from its heading (tap it, or Tab to it and press Enter). Folded, the heading shows a
-one-line summary, like `47% · 23.0°C · Processor 35%` for the server, and a folded Cameras section
-loads no pictures. Problems still show in the top line. What's folded or open (sections, the chart, each
-person, each group of devices) is remembered on each browser.
+one-line summary, like `🔋 47% · 23.0 °C · processor 35%` for the server, and a folded Cameras section
+loads no pictures. Problems still show in the top line. The printer starts folded, the rest open. What's
+folded or open (sections, each Details, each person, each group of devices) is remembered on each browser.
 
 On a computer or tablet the page uses more width: the internet numbers sit in one row, who's home and
 photo backup side by side, and the server's cards in one row (three per row on mid-size screens).

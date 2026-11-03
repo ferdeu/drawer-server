@@ -516,7 +516,7 @@ class RecordingsTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)  # asked once, then cached
         panel._rec_any["t"] -= 120  # a minute later it asks again
         (self.clip_dir / "143005-42.mp4").unlink()
-        self.assertIsNone(json.loads(self.fetch("/api/status")[1])["recordings"])
+        self.assertEqual(json.loads(self.fetch("/api/status")[1])["recordings"], {"off": True})
         self.assertEqual(len(calls), 2)
 
     def test_status_disk_full(self):
