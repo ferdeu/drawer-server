@@ -4,7 +4,7 @@ A web page on the server that tells you, at a glance, whether everything at home
 Open it from any phone or computer on your Wi-Fi at `http://<server-ip>:8080`, or from anywhere
 with Tailscale on at `http://<server-tailscale-ip>:8080` (step 8 prints both addresses).
 
-<img src="img/panel.jpg" alt="The status panel on a phone: title 'Our house', 'Everything works', internet latency and speed in use, who's home with each person's photo backup, the server's battery with a 24-hour chart, temperature, free memory and storage, services, the server and smart plug Wi-Fi, devices on the Wi-Fi grouped by type, and printer ink." width="320">
+<img src="img/panel.jpg" alt="The status panel on a phone: title 'Our house', 'Everything works', internet latency and speed in use, who's home with each person's photo backup, the server's battery with a 24-hour chart, temperature, processor, free memory and storage, the server and smart plug Wi-Fi, services, devices on the Wi-Fi grouped by type, and printer ink." width="320">
 
 *Example data. Yours shows your house.*
 
@@ -13,7 +13,8 @@ with Tailscale on at `http://<server-tailscale-ip>:8080` (step 8 prints both add
 Right after `bash scripts/08-panel.sh`, with an empty `.env`, the page has:
 
 - a line on top: **✓ Everything works**, or what doesn't;
-- the **server**: battery with a 24-hour chart, temperature, free memory and storage;
+- the **server**: battery with a 24-hour chart and how many watts go in or out, temperature, the
+  processor, free memory and storage, and (with the router card) the server's and the plug's Wi-Fi;
 - **services**: whether remote access is running, plus ad blocking, the game and photo backup once
   you install them. The game also shows who's playing.
 
@@ -87,11 +88,19 @@ To change anything later (a name, a person, a new card), edit `.env` and run
 | 📷 Cameras | home only, decided by the address the request comes from (Tailscale counts as away). For each camera the panel runs one ffmpeg that decodes only full frames from go2rtc's small stream, so a new still arrives with each full frame the camera sends (every ~4 s on the tested cameras); it starts when someone opens the page and stops 30 s after the last request. The first still takes a few seconds. Tapping a camera opens live video, which the panel passes through from go2rtc (it only listens on the phone); if the screen can't play the big stream within 5 s, it switches to the small one. |
 | 🎞️ Recordings | the clips step 12 saved in `~/recordings`. It is **closed by default** and loads nothing until you open it. Then: pick a camera, a day (today first), and tap a thumbnail to play the clip full screen, with ◀ ▶ for the previous or next clip. Seeking works. Some browsers can't play H.265 video: then it says "This browser can't play these videos (H.265)." and offers a **Download** link. It shows only at home (like live video), and only if step 12 is installed or clips exist. Away from home it says "Home only: open … on the home Wi-Fi". `PANEL_RECORDINGS=no` hides it for everyone and the clips can't be reached by address either. The panel can't delete clips or change settings. |
 | 💾 Free storage | free space, and under **Details** one row per kind of file: `Photo backup 20 / 50 GB (40%)`, `Recordings 3.1 / 10 GB (31%)`, then `Free`. A kind with no share set shows only its size. Photo backup comes from Syncthing, recordings from the recorder. With `DISK_BACKUP_GB` set, the top line says "photo backup near its limit" over 90% of it, and with `DISK_BACKUP_PAUSE=yes` the panel pauses the photo backup folders at 100% ("photo backup paused: at its limit") and resumes them under 95%. It only resumes folders it paused itself, and never deletes a photo. Recordings at their share give **no** warning: the oldest clip is deleted instead. |
+| 📊 Processor | how hard the phone is working: each group of cores' speed right now against its top speed, averaged over the last 10 s, and the load in words (calm, busy, very busy: load per core under 1, under 2, 2 or more). Android doesn't let apps read the processor's real use, its temperature sensors or the network totals, so this is the closest it gets without root. **Details** lists CPU (as a share of the whole phone) and memory for each of our own services; helpers like ffmpeg count under the service that started them, and "Other" is the rest of what Termux runs. Other apps and Android itself can't be seen. |
+| 🔋 Watts | the battery's voltage times its current, from Termux:API: "using 0.3 W" on battery, "charging at 12 W" on the charger. |
 | ⚠️ Top line, recorder | "⚠️ Front looks obstructed, check it (still recording)" or "(recording paused)", "Front not recording" (the recorder can't see that camera), "recorder stopped" (the panel hasn't heard from it for a minute) and "Disk almost full: recording stopped". They clear by themselves. |
 
 When the recorder runs, the camera stills come from the recorder's own picture check instead of a second ffmpeg per camera, which saves CPU. If the recorder is off or restarting, the panel makes the stills itself, as before.
 
-What's folded or open (the chart, each person, each group of devices) is remembered on each browser.
+Every section folds from its heading (tap it, or Tab to it and press Enter). Folded, the heading shows a
+one-line summary, like `47% · 23.0°C · Processor 35%` for the server, and a folded Cameras section
+loads no pictures. Problems still show in the top line. What's folded or open (sections, the chart, each
+person, each group of devices) is remembered on each browser.
+
+On a computer or tablet the page uses more width: the internet numbers sit in one row, who's home and
+photo backup side by side, and the server's cards in one row (three per row on mid-size screens).
 
 ## Tips
 

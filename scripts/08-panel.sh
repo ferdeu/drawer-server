@@ -106,7 +106,12 @@ echo \$! > \$PID
 EOF
 chmod +x ~/.termux/boot/40-panel.sh
 # restart so a new panel.py takes effect
-[ -f ~/panel/panel.pid ] && kill \"\$(cat ~/panel/panel.pid)\" 2>/dev/null || true
+if [ -f ~/panel/panel.pid ]; then
+  OLD=\$(cat ~/panel/panel.pid)
+  kill \"\$OLD\" 2>/dev/null || true
+  # wait until it lets go of the port (it stops its camera ffmpegs first), at most 10 s
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do kill -0 \"\$OLD\" 2>/dev/null || break; sleep 0.5; done
+fi
 rm -f ~/panel/panel.pid
 sh ~/.termux/boot/40-panel.sh
 sleep 4

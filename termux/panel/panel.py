@@ -28,6 +28,7 @@ from pathlib import Path
 from cameras import Stills, is_home, kill_leftovers, load_names
 from clips import CLIP, DAY, FOLDER, THUMB, ClipStore
 from settings import disk_settings, read_kv, shows_recordings
+from system import Sampler, battery_watts, load_word, sysinfo
 
 HOME = Path.home()
 PORT = int(os.environ.get("PANEL_PORT", "8080"))
@@ -255,6 +256,9 @@ def my_ip():
 
 
 def uptime_hours():
+    info = sysinfo()  # Android 15 refuses /proc/uptime to apps
+    if info:
+        return round(info["uptime_s"] / 3600, 1)
     try:
         return round(float(Path("/proc/uptime").read_text().split()[0]) / 3600, 1)
     except (OSError, ValueError):
@@ -691,6 +695,17 @@ def recorder_status(now):
     return out
 
 
+SAMPLER = Sampler()  # started in __main__; until then (and in tests) it reports nothing yet
+
+
+def system_status():
+    """How hard the phone works: CPU clock, load, our services and the battery's watts."""
+    snap, info = SAMPLER.snapshot(), sysinfo()
+    load = info["load"][0] if info else None
+    return dict(snap, load=load, load_word=load_word(load, snap["ncpu"]) if load is not None else None,
+                watts=battery_watts(_battery))
+
+
 def status(client_ip="127.0.0.1"):
     # each optional service shows up once its step installed it
     services = [{"name": "SSH", "ok": process_running("sshd")}]
@@ -716,7 +731,7 @@ def status(client_ip="127.0.0.1"):
     # Android sometimes puts Termux:API to sleep; then battery readings silently stop
     battery_stale = time.time() - _battery_ok_at > 600
     return {"battery": {} if battery_stale else _battery, "battery_stale": battery_stale, "memory": memory(), "disk": disk(), "uptime_h": uptime_hours(),
-            "services": services, "history": history,
+            "system": system_status(), "services": services, "history": history,
             "home": _home, "plug": _plug, "time": int(time.time()), "speed": speed_status(),
             "cameras": {"names": CAMERA_NAMES, "home": is_home(client_ip)} if CAMERA_NAMES else None,
             "recorder": recorder,
@@ -747,9 +762,13 @@ TEXT = {
            "black": "black", "cyan": "cyan", "magenta": "magenta", "yellow": "yellow",
            "all_ok": "Everything works", "internet": "Internet", "details": "Details",
            "net_unknown": "Can't read the dish", "down_now": "download now", "up_now": "upload now",
-           "connection": "Connection", "this_server": "Server", "the_plug": "Smart plug",
+           "this_server": "Server", "the_plug": "Smart plug",
            "svc": {"SSH": "Remote access", "NextDNS": "Ad blocking", "Luanti": "Kids' game", "Syncthing": "Photo backup",
-                   "Cameras": "Cameras", "Recorder": "Recorder"},
+                   "Cameras": "Cameras", "Recorder": "Recorder", "Panel": "Panel", "Other": "Other"},
+           "cpu": "Processor", "calm": "calm", "busy": "busy", "very_busy": "very busy",
+           "load": "load {l} on {n} cores",
+           "cpu_note": "Android doesn't let apps see the processor's real use; this is how fast it's running compared with its top speed.",
+           "uses_w": "using {w} W", "charges_w": "charging at {w} W",
            "use_note": "The dish reports how much is being used right now, not the top speed of the connection.",
            "speed_down": "top download", "speed_up": "top upload", "test_now": "Test now", "testing": "testing… (about 30 s)",
            "speed_wait": "just tested, try again in a few minutes",
@@ -757,7 +776,7 @@ TEXT = {
            "speed_ago": "speed test {t} ago", "speed_none": "no speed test yet", "speed_day": "Speed tests, last 24 h",
            "speed_every": "It tests by itself {n} times a day.", "speed_every1": "It tests by itself once a day.",
            "speed_note": "Measured from the server over its own Wi-Fi, against the nearest speedtest.net server; each test moves about 100 MB.",
-           "server": "Server", "show_chart": "📈 24 h", "n_of": "{a} of {b} online", "wifi": "Wi-Fi",
+           "server": "Server", "show_chart": "📈 24 h", "n_of": "{a} of {b} online", "n_home": "{a} of {b} home", "wifi": "Wi-Fi",
            "photos": "Photos", "no_details": "No details while away.",
            "printer_off": "not answering (off?)", "lowest": "lowest: {c} {p}%",
            "day_ago": "24 h ago", "now": "now",
@@ -795,9 +814,13 @@ TEXT = {
            "black": "negro", "cyan": "cian", "magenta": "magenta", "yellow": "amarillo",
            "all_ok": "Todo funciona", "internet": "Internet", "details": "Detalles",
            "net_unknown": "No puedo leer la antena", "down_now": "bajada actual", "up_now": "subida actual",
-           "connection": "Conexión", "this_server": "Servidor", "the_plug": "Enchufe",
+           "this_server": "Servidor", "the_plug": "Enchufe",
            "svc": {"SSH": "Acceso remoto", "NextDNS": "Bloqueo de publicidad", "Luanti": "Juego de los chicos", "Syncthing": "Backup de fotos",
-                   "Cameras": "Cámaras", "Recorder": "Grabador"},
+                   "Cameras": "Cámaras", "Recorder": "Grabador", "Panel": "Panel", "Other": "Otros"},
+           "cpu": "Procesador", "calm": "tranquilo", "busy": "ocupado", "very_busy": "muy ocupado",
+           "load": "carga {l} en {n} núcleos",
+           "cpu_note": "Android no deja ver el uso real del procesador; esto es qué tan rápido va comparado con su máximo.",
+           "uses_w": "usa {w} W", "charges_w": "carga a {w} W",
            "use_note": "La antena dice cuánto se está usando en este momento, no la velocidad máxima de la conexión.",
            "speed_down": "bajada máxima", "speed_up": "subida máxima", "test_now": "Medir ahora", "testing": "midiendo… (unos 30 s)",
            "speed_wait": "recién se midió, probá en unos minutos",
@@ -805,7 +828,7 @@ TEXT = {
            "speed_ago": "test de velocidad de hace {t}", "speed_none": "todavía sin medir", "speed_day": "Mediciones, últimas 24 h",
            "speed_every": "Mide sola {n} veces por día.", "speed_every1": "Mide sola una vez por día.",
            "speed_note": "Medido desde el server por su propio WiFi, contra el servidor de speedtest.net más cercano; cada medición usa unos 100 MB.",
-           "server": "Servidor", "show_chart": "📈 24 h", "n_of": "{a} de {b} conectados", "wifi": "WiFi",
+           "server": "Servidor", "show_chart": "📈 24 h", "n_of": "{a} de {b} conectados", "n_home": "{a} de {b} en casa", "wifi": "WiFi",
            "photos": "Fotos", "no_details": "Sin detalles mientras está afuera.",
            "printer_off": "no contesta (¿apagada?)", "lowest": "la más baja: {c} {p}%",
            "day_ago": "hace 24 h", "now": "ahora",
@@ -868,11 +891,40 @@ PAGE = """<!doctype html>
   summary::after { content:'›'; color:var(--muted); font-size:20px; line-height:1; transition:transform .15s; }
   details[open] > summary::after { transform:rotate(90deg); }
   .right { margin-left:auto; text-align:right; }
+  .netline { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; margin-top:4px; }
+  .netline button.link { margin-top:0; }
+  .pair { display:grid; gap:12px; }
+  .pair:not(:has(> section:not(.hidden))) { display:none; }
+  @media (min-width:600px) { .stats > .sep:not(.hidden) { border-left:1px solid var(--soft); padding-left:20px; } }
+  @media (min-width:900px) {
+    main { max-width:1180px; }
+    .pair { grid-template-columns:1fr 1fr; align-items:start; }
+    .pair:has(> section.hidden) > section { grid-column:1 / -1; }
+  }
+  #srv .grid { grid-auto-flow:dense; }  /* an opened card spans the row; the small ones fill the gap it leaves */
+  /* server cards in tidy rows: two of three on mid screens, one of six on wide ones
+     (auto-fit would keep an empty column there for the wide cards to span) */
+  @media (min-width:600px) and (max-width:1099px) {
+    #srv .grid { grid-template-columns:repeat(3, 1fr); }
+  }
+  @media (min-width:1100px) {
+    #srv .grid { grid-template-columns:repeat(6, 1fr); }
+    #srv .grid:has(> #wf.hidden) { grid-template-columns:repeat(5, 1fr); }
+  }
+  /* every section folds from its heading; folded, the heading shows a one-line summary */
+  .sec-h { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+  .sec-h > :first-child { flex:1; }
+  .sec-h::after { content:'›'; color:var(--muted); font-size:20px; line-height:1; transition:transform .15s; }
+  .sec-h:not(h2) { margin:-2px 0 2px; }
+  .sec:not(.shut) > .sec-h::after { transform:rotate(90deg); }
+  .sec.shut > :not(.sec-h), .sec:not(.shut) .sum, .sec.shut .open-only { display:none !important; }
+  .sec-h:focus-visible, summary:focus-visible { outline:2px solid var(--line); outline-offset:2px; border-radius:6px; }
   .stats { display:flex; flex-wrap:wrap; gap:4px 20px; }
   .stats .big { font-size:26px; }
   .unit { font-size:15px; font-weight:600; color:var(--muted); }
   .more { padding:0 0 8px 18px; }
-  .card:has(> details[open]#disk_det) { grid-column:1 / -1; }
+  .card:has(> details[open]#disk_det), .card:has(> details[open]#cpu_det) { grid-column:1 / -1; }
+  .wf + .wf { margin-top:8px; }
   .chips { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:6px; }
   .chips > span { display:inline-flex; align-items:center; }
   .chips .sub { margin-left:4px; }
@@ -906,23 +958,24 @@ PAGE = """<!doctype html>
 <header><h1>🏡 __TITLE__</h1><div class="overall" id="overall"></div></header>
 <div class="alert" id="alert"></div>
 
-<section class="card hidden" id="net">
-  <div class="label">🌐 __INTERNET__</div>
-  <div class="stats" id="net_now">
-    <div><div class="big" id="net_lat">–</div><div class="sub">__LATENCY__</div></div>
-    <div><div class="big" id="net_down">–</div><div class="sub">⬇ __DOWN_NOW__</div></div>
-    <div><div class="big" id="net_up">–</div><div class="sub">⬆ __UP_NOW__</div></div>
+<section class="card sec hidden" id="net">
+  <div class="sec-h" data-s="net" role="button" tabindex="0"><span class="label">🌐 __INTERNET__</span><span class="sub right sum" id="net_sum"></span></div>
+  <div class="stats">
+    <div class="stats" id="net_now">
+      <div><div class="big" id="net_lat">–</div><div class="sub">__LATENCY__</div></div>
+      <div><div class="big" id="net_down">–</div><div class="sub">⬇ __DOWN_NOW__</div></div>
+      <div><div class="big" id="net_up">–</div><div class="sub">⬆ __UP_NOW__</div></div></div>
+    <div class="stats sep hidden" id="net_speed">
+      <div><div class="big" id="sp_down">–</div><div class="sub">⬇ __SPEED_DOWN__</div></div>
+      <div><div class="big" id="sp_up">–</div><div class="sub">⬆ __SPEED_UP__</div></div></div>
   </div>
-  <div class="hidden" id="net_speed"><div class="stats" style="margin-top:12px">
-    <div><div class="big" id="sp_down">–</div><div class="sub">⬇ __SPEED_DOWN__</div></div>
-    <div><div class="big" id="sp_up">–</div><div class="sub">⬆ __SPEED_UP__</div></div></div>
-    <div class="sub" id="speed_last"></div><button class="link" id="speed_btn">__TEST_NOW__</button></div>
+  <div class="netline hidden" id="net_line"><span class="sub" id="speed_last"></span><button class="link" id="speed_btn">__TEST_NOW__</button></div>
   <details data-k="net"><summary class="sub">__DETAILS__</summary><div class="more" id="net_more"></div></details>
 </section>
 
-<section class="card hidden" id="cams"><div class="label">📷 __CAMERA__</div>
+<section class="card sec hidden" id="cams"><div class="sec-h" data-s="cams" role="button" tabindex="0"><span class="label">📷 __CAMERA__</span><span class="sub right sum" id="cams_sum"></span></div>
   <div class="cams" id="cam_grid"></div><div class="sub hidden" id="cam_away"></div></section>
-<section class="card hidden" id="rc"><details data-k="rec" id="rc_det"><summary>🎞️ __REC__<span class="sub right" id="rc_sum"></span></summary>
+<section class="card hidden" id="rc"><details data-k="rec" id="rc_det"><summary><span class="label">🎞️ __REC__</span><span class="sub right" id="rc_sum"></span></summary>
   <div class="more" id="rc_body"></div><div class="sub more hidden" id="rc_away"></div></details></section>
 <div class="live hidden" id="clip">
   <div class="live_top"><b id="clip_name"></b><button id="clip_close" aria-label="close">✕</button></div>
@@ -935,26 +988,30 @@ PAGE = """<!doctype html>
     <button class="nav prev" id="live_prev" aria-label="previous">◀</button><button class="nav next" id="live_next" aria-label="next">▶</button></div>
 </div>
 
-<section class="card hidden" id="pp"><div class="label">🏠 __PEOPLE__</div><div id="pp_list"></div></section>
-<section class="card hidden" id="bk"><div class="label">📷 __BACKUP__</div><div id="bk_list"></div></section>
+<div class="pair"><section class="card sec hidden" id="pp"><div class="sec-h" data-s="pp" role="button" tabindex="0"><span class="label">🏠 __PEOPLE__</span><span class="sub right sum" id="pp_sum"></span></div><div id="pp_list"></div></section>
+<section class="card sec hidden" id="bk"><div class="sec-h" data-s="bk" role="button" tabindex="0"><span class="label">📷 __BACKUP__</span><span class="sub right sum" id="bk_sum"></span></div><div id="bk_list"></div></section></div>
 
-<h2><span>🖥️ __SERVER__</span><span class="sub" id="up"></span></h2>
+<section class="sec" id="srv"><h2 class="sec-h" data-s="srv" role="button" tabindex="0"><span>🖥️ __SERVER__</span>
+  <span class="sub right sum" id="srv_sum"></span><span class="sub right open-only" id="up"></span></h2>
 <div class="grid">
   <div class="card"><div class="label">🔋 __BATTERY__</div><div class="big" id="bat">–</div><div class="sub" id="plug"></div>
     <button class="link" id="chart_btn">__SHOW_CHART__</button></div>
   <div class="card"><div class="label">🌡️ __TEMP__</div><div class="big" id="temp">–</div></div>
+  <div class="card"><div class="label">📊 __CPU__</div><div class="big" id="cpu">–</div>
+    <div class="bar"><i id="cpu_bar" style="width:0"></i></div><div class="sub" id="cpusub"></div>
+    <details data-k="cpu" id="cpu_det"><summary class="sub">__DETAILS__</summary><div class="more" id="cpu_more"></div></details></div>
   <div class="card"><div class="label">🧠 __RAM__</div><div class="big" id="ram">–</div><div class="sub" id="ramsub"></div></div>
   <div class="card"><div class="label">💾 __DISK__</div><div class="big" id="disk">–</div><div class="sub" id="disksub"></div>
     <details data-k="disk" class="hidden" id="disk_det"><summary class="sub">__DETAILS__</summary><div class="more" id="disk_more"></div></details></div>
+  <div class="card hidden" id="wf"><div class="label">📶 __WIFI__</div><div id="wf_list"></div></div>
   <div class="card wide hidden" id="chartbox"><div class="label">📈 __HISTORY__</div>
     <svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none"></svg>
     <div class="axis sub"><span>__DAY_AGO__</span><span>__NOW__</span></div></div>
   <div class="card wide"><div class="label">⚙️ __SERVICES__</div><div class="chips" id="svcs"></div></div>
-  <div class="card wide hidden" id="cn"><div class="label">📶 __CONNECTION__</div><div id="cn_list"></div></div>
-</div>
+</div></section>
 
-<section class="card hidden" id="dv"><div class="label" id="dv_title"></div><div id="dv_list"></div></section>
-<section class="card hidden" id="pr"><details data-k="printer"><summary>🖨️ __PRINTER__<span class="sub right" id="pr_sum"></span></summary>
+<section class="card sec hidden" id="dv"><div class="sec-h" data-s="dv" role="button" tabindex="0"><span class="label" id="dv_title"></span><span class="sub right sum" id="dv_sum"></span></div><div id="dv_list"></div></section>
+<section class="card hidden" id="pr"><details data-k="printer"><summary><span class="label">🖨️ __PRINTER__</span><span class="sub right" id="pr_sum"></span></summary>
   <div class="ink" id="pr_ink"></div></details></section>
 <div class="foot" id="foot"></div>
 </main>
@@ -984,6 +1041,25 @@ document.addEventListener('toggle', e => { if (e.target.dataset.k) remember(e.ta
 document.querySelectorAll('details[data-k]').forEach(d => { d.open = open.has(d.dataset.k); });
 const fold = (k, summary, body) =>
   `<details data-k="${esc(k)}"${open.has(k) ? ' open' : ''}><summary>${summary}</summary><div class="more">${body}</div></details>`;
+// folded sections, remembered like the open details; everything starts unfolded
+let shut = new Set();
+try { shut = new Set(JSON.parse(localStorage.getItem('shut') || '[]')); } catch (e) {}
+const isShut = k => shut.has(k);
+function shutSection(k, on) {
+  on ? shut.add(k) : shut.delete(k);
+  try { localStorage.setItem('shut', JSON.stringify([...shut])); } catch (e) {}
+  const h = document.querySelector(`.sec-h[data-s="${k}"]`);
+  h.closest('.sec').classList.toggle('shut', on);
+  h.setAttribute('aria-expanded', String(!on));
+  if (k === 'cams' && !on) stills();
+}
+document.querySelectorAll('.sec-h').forEach(h => {
+  const k = h.dataset.s;
+  h.closest('.sec').classList.toggle('shut', isShut(k));
+  h.setAttribute('aria-expanded', String(!isShut(k)));
+  h.onclick = () => shutSection(k, !isShut(k));
+  h.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); h.click(); } };
+});
 $('chart_btn').onclick = () => { remember('chart', !open.has('chart')); show('chartbox', open.has('chart')); };
 show('chartbox', open.has('chart'));
 
@@ -992,7 +1068,10 @@ async function refresh() {
     const s = await (await fetch('/api/status')).json();
     const h = s.home || {}, b = s.battery || {}, sp = s.plug;
     $('bat').textContent = b.percentage != null ? b.percentage + '%' : '–';
-    $('plug').textContent = (b.plugged && b.plugged !== 'UNPLUGGED' ? '⚡ ' + T.charging : T.not_charging) +
+    const w = s.system && s.system.watts, wt = k => w != null ? T[k].replace('{w}', num(w, 1)) : '';
+    // the current's sign differs between phones, so "charging at" goes by what Android says it is doing
+    $('plug').textContent = (b.plugged && b.plugged !== 'UNPLUGGED' ? '⚡ ' + (b.status === 'CHARGING' && wt('charges_w') || T.charging)
+                             : T.not_charging + (w != null ? ' · ' + wt('uses_w') : '')) +
       (sp && !sp.error ? ' · ' + (sp.on ? T.plug_on + (sp.watts != null ? ' ' + num(sp.watts) + ' W' : '') : T.plug_off.replace('{low}', sp.low)) : '');
     const t = b.temperature;
     $('temp').textContent = t != null ? num(t, 1) + '°C' : '–';
@@ -1002,6 +1081,7 @@ async function refresh() {
     $('disk').textContent = num(s.disk.free_gb) + ' GB';
     $('disksub').textContent = '/ ' + num(s.disk.total_gb) + ' GB';
     drawDisk(s.disk);
+    drawCpu(s.system);
     $('up').textContent = s.uptime_h != null ? T.uptime + ' ' + ago(Math.round(s.uptime_h * 60)) : '';
     set('svcs', s.services.map(v => {
       let detail = '';
@@ -1025,6 +1105,7 @@ async function refresh() {
     drawDevices(h.devices, (people ? people.map(x => x.ip) : []).concat([s.self_ip, s.plug_ip]));
     drawPrinter(h.printer);
     drawOverall(s, h);
+    drawSums(s, h);
     $('foot').textContent = T.updated + ' ' + new Date(s.time * 1000).toLocaleTimeString(LANG);
   } catch (e) { $('foot').textContent = '⚠️ ' + e; }
 }
@@ -1040,6 +1121,32 @@ function drawDisk(d) {
       : num(k.gb, 1) + ' / ' + num(k.share_gb, 1) + ' GB (' + pct + '%)', bad ? 'color:var(--bad)' : '') +
       (pct == null ? '' : `<div class="bar"><i style="width:${Math.min(100, pct)}%${bad ? ';background:var(--bad)' : ''}"></i></div>`);
   }).join('') + row(T.disk_free, num(d.free_gb, 1) + ' GB'));
+}
+
+// clock-based figure (Android hides real CPU use), the load in words, then each of our services
+function drawCpu(y) {
+  const p = y ? y.cpu_pct : null;
+  $('cpu').textContent = p != null ? p + '%' : '–';
+  $('cpu').style.color = p == null ? '' : p >= 95 ? BAD : p >= 80 ? WARN : '';
+  $('cpu_bar').style.width = (p || 0) + '%';
+  $('cpusub').textContent = y && y.load_word ? T[y.load_word] : '';
+  if (!y) return;
+  set('cpu_more', (y.services || []).map(v => row(T.svc[v.name] || esc(v.name), num(v.cpu_pct, 1) + '% · ' + v.mem_mb + ' MB') +
+      `<div class="bar"><i style="width:${Math.min(100, v.cpu_pct)}%"></i></div>`).join('') +
+    (y.load != null ? `<div class="sub">${T.load.replace('{l}', num(y.load, 1)).replace('{n}', y.ncpu)}</div>` : '') +
+    `<div class="sub" style="margin-top:6px">${T.cpu_note}</div>`);
+}
+
+// what a folded section shows in its heading
+function drawSums(s, h) {
+  const sl = h.starlink, last = s.speed && s.speed.last, b = s.battery || {}, cpu = s.system && s.system.cpu_pct;
+  $('net_sum').textContent = [sl && !sl.error ? sl.latency_ms + ' ms' : '', last ? '⬇ ' + num(last[1], 0) + ' Mbps' : '']
+    .filter(Boolean).join(' · ');
+  $('cams_sum').textContent = s.cameras ? s.cameras.names.join(' · ') : '';
+  const people = Array.isArray(h.people) ? h.people : [];
+  $('pp_sum').textContent = T.n_home.replace('{a}', people.filter(x => x.home).length).replace('{b}', people.length);
+  $('srv_sum').textContent = [b.percentage != null ? b.percentage + '%' : '', b.temperature != null ? num(b.temperature, 1) + '°C' : '',
+    cpu != null ? T.cpu + ' ' + cpu + '%' : ''].filter(Boolean).join(' · ');
 }
 
 function drawOverall(s, h) {
@@ -1091,6 +1198,7 @@ const mbps = r => `⬇ ${num(r[1], 1)} ⬆ ${num(r[2], 1)} Mbps · ${r[3]} ms`;
 let speedMsg = null, speedMsgUntil = 0;
 function drawSpeed(sp, now) {
   show('net_speed', sp);
+  show('net_line', sp);
   if (!sp) return;
   const l = sp.last, msg = Date.now() < speedMsgUntil ? speedMsg : null;
   const unit = ' <span class="unit">Mbps</span>';
@@ -1138,7 +1246,7 @@ function drawCameras(c, selfIp) {
   if (fresh) stills();
 }
 function stills() {
-  if (!cams || !cams.home || document.visibilityState !== 'visible') return;
+  if (!cams || !cams.home || isShut('cams') || document.visibilityState !== 'visible') return;
   document.querySelectorAll('#cam_grid img').forEach(async img => {
     if (img.dataset.busy) return;  // a slow answer must not pile up requests
     img.dataset.busy = 1;
@@ -1392,15 +1500,16 @@ function drawPeople(people, h) {
   const rest = folders.filter(f => !from(f).some(n => names.includes(n)));
   show('bk', rest.length);
   set('bk_list', rest.map(f => backupRows(f, bk.mb_s)).join(''));
+  $('bk_sum').textContent = !rest.length ? '' : rest.every(f => !f.need_files) ? T.up_to_date : Math.min(...rest.map(f => f.pct)) + '%';
 }
 
-// the server's own Wi-Fi and its plug's, from the router's list
+// the server's own Wi-Fi and its plug's, from the router's list, in a card of the Server section
 function drawConnection(dv, s) {
   const devs = (dv && dv.devices) || [];
   const rows = [['📱 ' + T.this_server, s.self_ip], ['🔌 ' + T.the_plug, s.plug_ip]]
     .map(([name, ip]) => [name, ip && devs.find(d => d.last_ip === ip)]).filter(([, d]) => d);
-  show('cn', rows.length);
-  set('cn_list', rows.map(([name, d]) => row(dot(d.online ? OK : BAD) + name, wifiText(d))).join(''));
+  show('wf', rows.length);
+  set('wf_list', rows.map(([name, d]) => `<div class="wf">${dot(d.online ? OK : BAD)}${name}<div class="sub">${wifiText(d)}</div></div>`).join(''));
 }
 
 const KINDS = ['camera', 'computer', 'phone', 'network', 'other'];
@@ -1412,6 +1521,7 @@ function drawDevices(dv, hide) {
   const list = dv.devices.filter(d => !(d.last_ip && hide.includes(d.last_ip)));
   $('dv_title').textContent = '📶 ' + T.devices + (dv.ssid ? ' ' + T.on + ' ' + dv.ssid : '') +
     ' (' + list.filter(d => d.online).length + ')';
+  $('dv_sum').textContent = T.n_of.replace('{a}', list.filter(d => d.online).length).replace('{b}', list.length);
   set('dv_list', KINDS.map(k => {
     const g = list.filter(d => d.kind === k);
     if (!g.length) return '';
@@ -1694,6 +1804,7 @@ if __name__ == "__main__":
     if PLUG_CONFIG.exists():
         threading.Thread(target=plug_keeper, daemon=True).start()
     threading.Thread(target=speed_scheduler, daemon=True).start()
+    SAMPLER.start()
     CAMERA_NAMES = load_names(CONFIG / "cameras")  # names only; the codes stay in go2rtc's config
     if CAMERA_NAMES:
         kill_leftovers(DATA / "cams")

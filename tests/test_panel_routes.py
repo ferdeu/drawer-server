@@ -121,6 +121,13 @@ class RoutesTest(unittest.TestCase):
         cams = json.loads(self.fetch("/api/status")[1])["cameras"]
         self.assertEqual(cams, {"names": ["Entrada", "Lateral", "Fondo"], "home": True})
 
+    def test_status_system(self):
+        s = json.loads(self.fetch("/api/status")[1])
+        self.assertGreaterEqual(s["system"]["ncpu"], 1)
+        self.assertIsInstance(s["system"]["services"], list)
+        self.assertIn(s["system"]["load_word"], ("calm", "busy", "very_busy"))
+        self.assertIsNotNone(s["uptime_h"])  # Android 15 refuses /proc/uptime: it comes from sysinfo()
+
     def test_no_cameras(self):
         panel.STILLS, panel.CAMERA_NAMES = None, []
         self.assertEqual(self.fetch("/api/camera/1.jpg")[0], 404)
