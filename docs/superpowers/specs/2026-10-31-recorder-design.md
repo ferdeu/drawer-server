@@ -59,6 +59,8 @@ so a future panel screen can edit settings without changing how the programs wor
 - Deleting clips, or changing any setting, from the panel. It would need protection (anyone on the
   home Wi-Fi can open the panel); the settings files are shaped so that screen can come later
   (owner agreed). Deleting clips by hand: SFTP/SSH (docs say where they are).
+  *Changed 2026-11-03 (owner): the panel deletes a clip or a camera's day, for anyone at home, after a
+  confirmation; see `docs/superpowers/plans/2026-11-03-delete-recordings.md`. Settings stay out.*
 - Copying clips elsewhere (cloud, computer).
 - The doorbell (no RTSP, as in step 11).
 

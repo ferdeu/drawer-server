@@ -305,8 +305,9 @@ step 3 (WinSCP and FileZilla work).
 
 **When the space is full,** the oldest clips are deleted first, across all cameras, until the folder is
 under `DISK_RECORDINGS_GB`. That is normal and the panel doesn't warn about it. The recorder only ever
-deletes its own clips, never photos or anything else. The panel never deletes or changes anything. To
-delete clips yourself: SFTP, or ssh into the phone and run `rm -r ~/recordings/<camera>/<day>` (or
+deletes its own clips, never photos or anything else. From the panel, anyone at home can delete a clip
+or a camera's whole day after a confirmation (see `docs/panel.md`); it never changes settings. To
+delete clips by hand: SFTP, or ssh into the phone and run `rm -r ~/recordings/<camera>/<day>` (or
 `rm -r ~/recordings` for all of them).
 
 **A camera that sees something moving all the time** (a plant in the wind, a flag, rain on the lens) would

@@ -787,6 +787,9 @@ TEXT = {
            "rec": "Recordings", "rec_sum": "{n} today · {gb} GB", "rec_none": "No clips yet",
            "rec_today": "Today", "rec_yesterday": "Yesterday",
            "rec_cant_play": "This browser can't play these videos (H.265).", "rec_download": "Download",
+           "rec_delete": "Delete", "rec_del_one": "Delete this clip? It can't be undone.",
+           "rec_del_day": "Delete the whole day", "rec_del_day_q": "Delete the {n} clips ({size}) from {cam}, {day}?", "rec_del_day_q1": "Delete the only clip ({size}) from {cam}, {day}?",
+           "rec_del_sure": "It can't be undone. Delete them anyway?", "rec_del_fail": "Couldn't delete it.",
            "p_obstructed": "{cam} looks obstructed, check it ({what})", "p_still_rec": "still recording",
            "p_paused": "recording paused", "p_not_rec": "{cam} not recording", "p_rec_down": "recorder stopped",
            "p_disk_full": "Disk almost full: recording stopped",
@@ -839,6 +842,9 @@ TEXT = {
            "rec": "Grabaciones", "rec_sum": "{n} hoy · {gb} GB", "rec_none": "Todavía no hay clips",
            "rec_today": "Hoy", "rec_yesterday": "Ayer",
            "rec_cant_play": "Este navegador no puede reproducir estos videos (H.265).", "rec_download": "Descargar",
+           "rec_delete": "Borrar", "rec_del_one": "¿Borrar este clip? No se puede deshacer.",
+           "rec_del_day": "Borrar todo el día", "rec_del_day_q": "¿Borrar los {n} clips ({size}) de {cam} del {day}?", "rec_del_day_q1": "¿Borrar el único clip ({size}) de {cam} del {day}?",
+           "rec_del_sure": "No se puede deshacer. ¿Borrar igual?", "rec_del_fail": "No se pudo borrar.",
            "p_obstructed": "{cam} parece tapada, revisala ({what})", "p_still_rec": "sigue grabando",
            "p_paused": "grabación en pausa", "p_not_rec": "{cam} no está grabando", "p_rec_down": "el grabador se detuvo",
            "p_disk_full": "Disco casi lleno: se dejó de grabar",
@@ -938,6 +944,7 @@ PAGE = """<!doctype html>
   .live.hidden { display:none; }
   .live_top { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; }
   .live_top button { background:none; border:0; color:#fff; font-size:26px; cursor:pointer; }
+  #clip_del { font-size:20px; margin-right:14px; }
   .live_view { flex:1; position:relative; overflow:hidden; touch-action:none; }
   .live_view video { width:100%; height:100%; object-fit:contain; transform-origin:0 0; }
   .live_msg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#ccc; pointer-events:none; }
@@ -978,7 +985,8 @@ PAGE = """<!doctype html>
 <section class="card hidden" id="rc"><details data-k="rec" id="rc_det"><summary><span class="label">🎞️ __REC__</span><span class="sub right" id="rc_sum"></span></summary>
   <div class="more" id="rc_body"></div><div class="sub more hidden" id="rc_away"></div></details></section>
 <div class="live hidden" id="clip">
-  <div class="live_top"><b id="clip_name"></b><button id="clip_close" aria-label="close">✕</button></div>
+  <div class="live_top"><b id="clip_name"></b><span><button id="clip_del" aria-label="__REC_DELETE__" title="__REC_DELETE__">🗑️</button>
+    <button id="clip_close" aria-label="close">✕</button></span></div>
   <div class="live_view" id="clip_view"><video id="clip_video" controls autoplay playsinline></video><div class="live_msg col" id="clip_msg"></div>
     <button class="nav prev" id="clip_prev" aria-label="previous">◀</button><button class="nav next" id="clip_next" aria-label="next">▶</button></div>
 </div>
@@ -1311,6 +1319,7 @@ function drawRecs() {
   $('rc_body').innerHTML =
     (recs.length > 1 ? `<div class="picks">${recs.map((c, i) => pick(i === recCam, `data-cam="${i}"`, c.name)).join('')}</div>` : '') +
     `<div class="picks">${cam.days.map(d => pick(d === recDay, `data-day="${esc(d)}"`, dayName(d))).join('')}</div>` +
+    (recClips.length ? `<button class="link" data-delday="1">🗑️ ${T.rec_del_day}</button>` : '') +
     (recClips.length ? `<div class="clips">${recClips.map((c, i) => `<button class="clip" data-i="${i}">` +
       (c.thumb ? `<img alt="" loading="lazy" src="${recUrl(cam.folder, recDay, c.file.slice(0, -4) + '.jpg')}">` : '') +
       `<span class="name">${esc(c.time)} · ${c.len}s</span></button>`).join('')}</div>` : `<div class="sub" style="margin-top:8px">${T.rec_none}</div>`);
@@ -1325,8 +1334,39 @@ $('rc_body').onclick = async e => {
   try {
     if (b.dataset.cam != null) { recCam = +b.dataset.cam; await pickDay(recs[recCam].days[0] || null); }
     else if (b.dataset.day) await pickDay(b.dataset.day);
+    else if (b.dataset.delday) await deleteDay();
     else if (b.dataset.i != null) openClip(+b.dataset.i);
   } catch (err) { $('rc_body').textContent = '⚠️ ' + err; }
+};
+
+// deleting asks first (twice for a whole day), then the lists reload
+async function deleteRec(url) {
+  const r = await fetch(url, {method: 'DELETE'}).catch(() => null);
+  if (!r || !r.ok) alert(T.rec_del_fail);
+  return !!(r && r.ok);
+}
+async function reloadRecs() {
+  const folder = recs[recCam] && recs[recCam].folder, day = recDay;
+  recs = (await (await fetch('/api/recordings')).json()).cameras;
+  const i = recs.findIndex(c => c.folder === folder);
+  recCam = i >= 0 ? i : Math.max(0, recs.findIndex(c => c.days.length));
+  const cam = recs[recCam];
+  await pickDay(cam ? (cam.days.includes(day) ? day : cam.days[0] || null) : null);
+}
+async function deleteDay() {
+  const b = recClips.reduce((a, c) => a + (c.bytes || 0), 0), size = b >= 1e9 ? num(b / 1e9, 1) + ' GB' : Math.max(1, Math.round(b / 1e6)) + ' MB';
+  const when = new Date(recDay + 'T12:00').toLocaleDateString(LANG, {day: 'numeric', month: 'numeric'});
+  const q = T[recClips.length === 1 ? 'rec_del_day_q1' : 'rec_del_day_q'].replace('{n}', recClips.length).replace('{size}', size).replace('{cam}', recs[recCam].name).replace('{day}', when);
+  if (!confirm(q) || !confirm(T.rec_del_sure)) return;
+  if (await deleteRec('/api/recordings/' + enc(recs[recCam].folder) + '/' + enc(recDay))) await reloadRecs();
+}
+$('clip_del').onclick = async () => {
+  const c = recClips[clipAt];
+  if (!c || !confirm(T.rec_del_one) || !await deleteRec(recUrl(recs[recCam].folder, recDay, c.file))) return;
+  const at = clipAt;
+  recClips.splice(at, 1);
+  if (recClips.length) { openClip(Math.min(at, recClips.length - 1)); drawRecs(); }
+  else { closeClip(); await reloadRecs(); }
 };
 
 // clip player: full screen like live view; the back button closes it
