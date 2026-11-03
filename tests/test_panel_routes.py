@@ -376,7 +376,7 @@ class RecordingsTest(unittest.TestCase):
         cams = json.loads(self.fetch("/api/recordings")[1])["cameras"]
         self.assertEqual([(c["name"], c["days"]) for c in cams], [("Entrada", [self.day])])
         clips = json.loads(self.fetch(f"/api/recordings/Entrada/{self.day}")[1])["clips"]
-        self.assertEqual(clips, [{"file": "143005-42.mp4", "time": "14:30:05", "len": 42, "thumb": True}])
+        self.assertEqual(clips, [{"file": "143005-42.mp4", "time": "14:30:05", "len": 42, "thumb": True, "bytes": 1006}])
 
     def test_file_and_range(self):
         url = f"/rec/Entrada/{self.day}/143005-42.mp4"
@@ -401,6 +401,57 @@ class RecordingsTest(unittest.TestCase):
         for path in self.routes():
             self.assertEqual(self.fetch(path, {"Origin": "http://evil.example"})[0], 403, path)
             self.assertEqual(self.fetch(path)[0], 200, path)
+
+    def delete(self, path, headers=None):
+        req = urllib.request.Request(self.base + path, method="DELETE", headers=headers or {})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    def test_delete_clip_route(self):
+        url = f"/rec/Entrada/{self.day}/143005-42.mp4"
+        self.assertEqual(self.delete(url), (200, {"clips": 1, "bytes": 1006}))
+        self.assertEqual(self.fetch(url)[0], 404)
+        self.assertEqual(self.delete(url), (404, None))
+
+    def test_delete_day_route(self):
+        (self.clip_dir / "150000-8.mp4").write_bytes(b"abc")
+        (self.clip_dir / "160000.part.mp4").write_bytes(b"rec")
+        self.assertEqual(self.delete(f"/api/recordings/Entrada/{self.day}"), (200, {"clips": 2, "bytes": 1009}))
+        self.assertEqual(sorted(p.name for p in self.clip_dir.iterdir()), ["160000.part.mp4"])
+
+    def delete_routes(self):
+        return [f"/rec/Entrada/{self.day}/143005-42.mp4", f"/api/recordings/Entrada/{self.day}"]
+
+    def test_delete_away(self):
+        panel.is_home = lambda ip: False
+        for path in self.delete_routes():
+            self.assertEqual(self.delete(path)[0], 403, path)
+        self.assertTrue((self.clip_dir / "143005-42.mp4").exists())
+
+    def test_delete_other_site(self):
+        for path in self.delete_routes():
+            self.assertEqual(self.delete(path, {"Origin": "http://evil.example"})[0], 403, path)
+        self.assertTrue((self.clip_dir / "143005-42.mp4").exists())
+
+    def test_delete_hidden(self):
+        (panel.CONFIG / "panel-recordings").write_text("show=no\n")
+        for path in self.delete_routes():
+            self.assertEqual(self.delete(path)[0], 404, path)
+        self.assertTrue((self.clip_dir / "143005-42.mp4").exists())
+
+    def test_delete_path_tricks(self):
+        (self.root / "secret-1.mp4").write_bytes(b"secret")
+        for path in (f"/rec/..%2F/{self.day}/143005-42.mp4", f"/rec/Entrada/{self.day}/..%2F..%2Fsecret-1.mp4",
+                     f"/rec/Entrada/{self.day}/143005-42.jpg", "/rec/Entrada/2026-1-1/143005-42.mp4",
+                     f"/api/recordings/%2e%2e/{self.day}", "/api/recordings/Entrada/..", "/api/recordings",
+                     "/api/status", "/"):
+            self.assertEqual(self.delete(path)[0], 404, path)
+        self.assertTrue((self.root / "secret-1.mp4").exists())
+        self.assertTrue((self.clip_dir / "143005-42.mp4").exists())
+        self.assertTrue((self.clip_dir / "143005-42.jpg").exists())
 
     def test_hidden(self):
         (panel.CONFIG / "panel-recordings").write_text("show=no\n")

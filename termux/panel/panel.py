@@ -1634,13 +1634,34 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return origin is None or origin == "http://" + host
 
-    def recordings(self):
-        path = self.path.split("?", 1)[0]
+    def recordings_allowed(self):
+        """Recordings shown, asked from home and from the panel's own page; else answers 404/403."""
         if not recordings_shown():
             self.send_error(404)
-            return
+            return False
         if not is_home(self.client_address[0]) or not self.same_site():
             self.send_error(403)  # recordings are home-only, like live view
+            return False
+        return True
+
+    def do_DELETE(self):
+        """A clip, or one camera's whole day, from the recordings section. Anyone at home may (owner's
+        call); the page asks first. Only the recorder's clips and thumbnails, never a part being recorded."""
+        if not self.recordings_allowed():
+            return
+        path, done = self.path.split("?", 1)[0], None
+        if m := REC_FILE.fullmatch(path):
+            done = STORE.delete_clip(*(urllib.parse.unquote(g) for g in m.groups()))
+        elif m := REC_DAY.fullmatch(path):
+            done = STORE.delete_day(*(urllib.parse.unquote(g) for g in m.groups()))
+        if done and done["bytes"]:
+            self.send_json(done)
+        else:
+            self.send_error(404)
+
+    def recordings(self):
+        path = self.path.split("?", 1)[0]
+        if not self.recordings_allowed():
             return
         # each segment is decoded once; folder names hold a literal % themselves
         if path == "/api/recordings":
