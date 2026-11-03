@@ -327,7 +327,11 @@ runs **warmer** than with the other services, more so in a closed drawer or whil
 - If it runs hot, use `RECORD_CHECK=light` or record fewer cameras (`RECORD_CAMERAS`).
 - Check after the first day, not just the first hour.
 
-<!-- TASK12: heat numbers (measured temperature curve with the recorder on, with the phone named) -->
+**Heat, measured on the Motorola Edge 40** (indoors, in the open, smart plug charging between 30 and
+80%): with the recorder off the battery sat at 33 °C while charging. With the recorder on (`fast`,
+three cameras) for an hour it rose to **35 °C at most** while charging, and fell to 30–31 °C once the
+plug stopped charging. Far from the 40 °C warning. A slower phone, a warm room or a closed drawer can
+run hotter: check the 🌡️ card.
 
 **Measured on the Motorola Edge 40** (8 GB, fast chip, server on 5 GHz Wi-Fi), three cameras at once,
 in each mode, without the recorder's own Python program (about 0.2% of a core and 20–30 MB more):
