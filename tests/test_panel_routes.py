@@ -1,10 +1,11 @@
-"""Tests for the panel's camera routes. Run on the phone: bash tests/run-on-phone.sh"""
+"""Tests for the panel's routes (cameras, recordings, devices). Run on the phone: bash tests/run-on-phone.sh"""
 import json
 import socket
 import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 import urllib.error
 import urllib.request
@@ -522,6 +523,156 @@ class RecordingsTest(unittest.TestCase):
     def test_status_disk_full(self):
         self.write_state(disk_full=True)
         self.assertTrue(json.loads(self.fetch("/api/status")[1])["recorder"]["disk_full"])
+
+
+class DevicesTest(unittest.TestCase):
+    """Naming and forgetting devices from the devices card."""
+    ON, OFF = "02-AB-CD-00-00-01", "02-AB-CD-00-00-02"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), panel.Handler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.server.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        self.saved = panel.CONFIG, panel.DEVICES_SEEN, panel.is_home, dict(panel._dv_last), panel._home["devices"]
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        panel.CONFIG = root
+        (root / "router").write_text("http://192.168.1.1\nsecret\n")
+        panel.DEVICES_SEEN = root / "devices.json"
+        now = time.time()
+        panel.DEVICES_SEEN.write_text(json.dumps({
+            self.ON: {"host": "Android", "ip": "192.168.1.20", "conn": "2.4", "signal": -69, "last": now},
+            self.OFF: {"host": None, "ip": "192.168.1.50", "conn": "2.4", "signal": -60, "last": now - 3 * 3600}}))
+        panel._dv_last.update(read=True, online={self.ON}, ssid="Casa")
+        panel.is_home = lambda ip: True
+
+    def tearDown(self):
+        panel.CONFIG, panel.DEVICES_SEEN, panel.is_home, last, panel._home["devices"] = self.saved
+        panel._dv_last.update(last)
+        self.tmp.cleanup()
+
+    def send(self, method, path, body=None, headers=None):
+        data = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
+        req = urllib.request.Request(self.base + path, data=data, method=method, headers=headers or {})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, None
+
+    def names(self):
+        return {d["mac"]: d["name"] for d in panel._home["devices"]["devices"]}
+
+    def test_name_and_unname(self):
+        code, out = self.send("POST", f"/api/devices/{self.OFF}/name", {"name": "  Celu de\tJuan\n "})
+        self.assertEqual(code, 200)
+        self.assertEqual({d["mac"]: d["name"] for d in out["devices"]["devices"]}[self.OFF], "Celu de Juan")
+        self.assertEqual(out["devices"]["ssid"], "Casa")
+        self.assertEqual(json.loads((panel.CONFIG / "device-names-panel.json").read_text()), {self.OFF: "Celu de Juan"})
+        # the panel's name wins over PANEL_DEVICE_NAMES; an empty one goes back to it
+        (panel.CONFIG / "device-names").write_text(f"{self.ON} Tablet\n")
+        self.send("POST", f"/api/devices/{self.ON}/name", {"name": "Compu de Juan"})
+        self.assertEqual(self.names()[self.ON], "Compu de Juan")
+        self.assertEqual({d["mac"]: d["kind"] for d in panel._home["devices"]["devices"]}[self.ON], "computer")
+        self.send("POST", f"/api/devices/{self.ON}/name", {"name": ""})
+        self.assertEqual(self.names()[self.ON], "Tablet")
+
+    def test_name_is_trimmed(self):
+        self.send("POST", f"/api/devices/{self.ON}/name", {"name": "x" * 100})
+        self.assertEqual(self.names()[self.ON], "x" * 40)
+
+    def test_forget_offline_only(self):
+        self.send("POST", f"/api/devices/{self.OFF}/name", {"name": "Juan"})
+        self.assertEqual(self.send("DELETE", f"/api/devices/{self.ON}")[0], 404)  # still connected
+        code, out = self.send("DELETE", f"/api/devices/{self.OFF}")
+        self.assertEqual(code, 200)
+        self.assertEqual([d["mac"] for d in out["devices"]["devices"]], [self.ON])
+        self.assertNotIn(self.OFF, json.loads(panel.DEVICES_SEEN.read_text()))
+        self.assertEqual(json.loads((panel.CONFIG / "device-names-panel.json").read_text()), {})
+        self.assertEqual(self.send("DELETE", f"/api/devices/{self.OFF}")[0], 404)
+
+    def test_bad_requests(self):
+        for body in (b"", b"not json", {"nombre": "x"}, {"name": 5}, b"{" + b" " * 2000 + b"}"):
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/name", body)[0], 400, body)
+        for method, path in (("POST", "/api/devices/AA-BB-CC-DD-EE-FF/name"), ("DELETE", "/api/devices/AA-BB-CC-DD-EE-FF"),
+                             ("POST", f"/api/devices/{self.ON}"), ("DELETE", f"/api/devices/{self.OFF}/name"),
+                             ("POST", f"/api/devices/{self.ON.lower()}/name"), ("POST", "/api/devices/..%2F/name")):
+            self.assertEqual(self.send(method, path, {"name": "x"} if method == "POST" else None)[0], 404, path)
+        self.assertFalse((panel.CONFIG / "device-names-panel.json").exists())
+
+    def test_away_other_site_no_router(self):
+        panel.is_home = lambda ip: False
+        self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/name", {"name": "x"})[0], 403)
+        self.assertEqual(self.send("DELETE", f"/api/devices/{self.OFF}")[0], 403)
+        panel.is_home = lambda ip: True
+        evil = {"Origin": "http://evil.example"}
+        self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/name", {"name": "x"}, evil)[0], 403)
+        self.assertEqual(self.send("DELETE", f"/api/devices/{self.OFF}", headers=evil)[0], 403)
+        (panel.CONFIG / "router").unlink()
+        self.assertEqual(self.send("DELETE", f"/api/devices/{self.OFF}")[0], 404)
+        self.assertIn(self.OFF, json.loads(panel.DEVICES_SEEN.read_text()))
+
+    def test_before_first_router_read(self):
+        panel._dv_last.update(read=False, online=set())
+        self.assertEqual(self.send("DELETE", f"/api/devices/{self.ON}")[0], 404)
+
+    def test_broken_files(self):
+        (panel.CONFIG / "device-names-panel.json").write_text("{half")
+        self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/name", {"name": "Juan"})[0], 200)
+        self.assertEqual(json.loads((panel.CONFIG / "device-names-panel.json").read_text()), {self.ON: "Juan"})
+        self.assertEqual(sorted(p.name for p in panel.CONFIG.iterdir() if p.suffix == ".tmp"), [])
+        panel.DEVICES_SEEN.write_text("")
+        self.assertEqual(self.send("DELETE", f"/api/devices/{self.OFF}")[0], 404)
+
+    def router_read(self, fail=False):
+        """devices() against a fake router module that lists only ON."""
+        dev = types.SimpleNamespace(macaddr=self.ON, ipaddr="192.168.1.20", hostname="Android",
+                                    type=types.SimpleNamespace(name="HOST_2G"), signal=-60)
+
+        class Client:
+            def authorize(self):
+                if fail:
+                    raise OSError("router busy")
+
+            def get_status(self):
+                return types.SimpleNamespace(devices=[dev])
+
+            def request(self, *a):
+                return {"ssid": "Casa"}
+
+            def logout(self):
+                pass
+        fake = types.ModuleType("tplinkrouterc6u")
+        fake.TplinkRouterProvider = types.SimpleNamespace(get_client=lambda url, pw: Client())
+        saved = sys.modules.get("tplinkrouterc6u")
+        sys.modules["tplinkrouterc6u"] = fake
+        try:
+            return panel.devices()
+        finally:
+            if saved:
+                sys.modules["tplinkrouterc6u"] = saved
+            else:
+                del sys.modules["tplinkrouterc6u"]
+
+    def test_reader_keeps_names_and_stores_itself(self):
+        self.send("POST", f"/api/devices/{self.ON}/name", {"name": "Juan"})
+        self.assertIsNone(self.router_read())  # it stores the list itself, under the lock
+        self.assertEqual(self.names(), {self.ON: "Juan", self.OFF: "192.168.1.50"})
+        self.assertEqual(self.status_home(), True)
+        with self.assertRaises(OSError):
+            self.router_read(fail=True)
+        self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/name", {"name": "x"})[0], 404)
+
+    def status_home(self):
+        with urllib.request.urlopen(self.base + "/api/status", timeout=10) as r:
+            return json.loads(r.read())["at_home"]
 
 
 class DiskTest(unittest.TestCase):

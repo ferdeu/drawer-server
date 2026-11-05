@@ -33,7 +33,7 @@ ones you don't have.
 | 🚀 Speed test | nothing; each test moves ~100 MB, mind data caps | `PANEL_SPEEDTEST=4`: tests a day, 0 to 6 (0 = only the "Test again" button) |
 | 🏠 Who's home | each person's phone with a fixed IP in the router | `PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"` (simple names: letters, numbers, - or _) |
 | 📶 Devices on the Wi-Fi | a TP-Link router (tested: Archer AX23) | `PANEL_ROUTER=tplink`, `ROUTER_URL`, `ROUTER_PASSWORD` |
-| Device names | the router card | `PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Front door camera,…"` |
+| Device names | the router card | nothing: tap a device in the panel to name it (from home). Or `PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Front door camera,…"` |
 | Hide devices | the router card | `PANEL_DEVICE_HIDE="F4-70-18-00-00-03,…"`, e.g. a camera's Wi-Fi you turned off because it's on cable (otherwise it shows as an offline camera for a month) |
 | 🖨️ Ink levels | an Epson printer with a fixed IP | `PANEL_PRINTER_IP=192.168.1.40` |
 | 📷 Photo backup | step 9, run with the same name as in `PANEL_PEOPLE` | nothing: step 9 adds it |
@@ -60,9 +60,15 @@ ones you don't have.
    ```
 4. **Run** `bash scripts/08-panel.sh` and open the address it prints.
 5. **Name the devices.** The devices card lists everything on the Wi-Fi with the name each device
-   reports, and some report none (you'll see a MAC address like `F4-70-18-…` instead). Copy those
-   MACs into `PANEL_DEVICE_NAMES` with a name you recognize, and run step 8 again.
-   Names you set there win over the reported ones.
+   reports, and some report none (you'll see an address like `192.168.1.50` instead). From home,
+   tap a device, type a name and tap **Save**; an empty name goes back to the reported one. A device
+   that's offline also gets **Delete from the list** (it asks first): the panel forgets it and its
+   name, and if it joins again it shows up as new. Names live on the server
+   (`~/.config/drawer-server/device-names-panel.json`) and move with it to a new phone.
+
+   You can also set names in `.env`: copy MACs into `PANEL_DEVICE_NAMES` and run step 8 again.
+   Names given in the panel win over those, and both win over the reported ones. Phones often make
+   up a new MAC for each network (and some change it now and then), so a phone's name may not stick.
 
    To see everything the router knows first, run `bash scripts/router-devices.sh`. It needs the
    router password from `.env` and changes nothing. It prints one line per device (MAC, the name it
@@ -82,7 +88,7 @@ To change anything later (a name, a person, a new card), edit `.env` and run
 |---|---|
 | 🛰️ Internet | the dish's local gRPC API at `192.168.100.1:9200` (`grpcurl`), no account needed. Shows latency and the download/upload **in use right now**, which is not a speed test. |
 | 🏠 Who's home | pings each phone every 2 min; "home" if it answered in the last 20 min (sleeping phones skip pings). With the router card on, a phone the router lists as connected also counts as home, and tapping a person shows their phone's Wi-Fi and photo backup, and that phone leaves the devices list. |
-| 📶 Devices | asks the TP-Link router (web API, [tplinkrouterc6u](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)) every 5 min for everything connected, grouped by type, with cable/2.4/5 GHz and signal. Devices that leave show as offline for a month, and one that joins the Wi-Fi but never gets an address is flagged (a common reason cameras "go offline"). |
+| 📶 Devices | asks the TP-Link router (web API, [tplinkrouterc6u](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)) every 5 min for everything connected, grouped by type, with cable/2.4/5 GHz and signal. Devices that leave show as offline for a month, and one that joins the Wi-Fi but never gets an address is flagged (a common reason cameras "go offline"). Tap a device to name it, or to delete an offline one from the list; only from home and from the panel's own page. |
 | 🖨️ Ink | Epson's own SNMP status query (`@BDC ST2`), which works on old models like the XP-211 that don't fill the standard printer-supplies table. |
 | 📷 Photo backup | Syncthing's local API: whether each phone is connected, how much is left, the download speed. Folders from phones that aren't in `PANEL_PEOPLE` get a card of their own. |
 | 🔌 Smart plug | the panel itself switches the plug: it checks every minute, cuts the charger at 80% and turns it back on at 30% (`CHARGE_HIGH` and `CHARGE_LOW`). If the battery can't be read for 30 minutes it turns the charger on, and the plug comes back on after a power cut, so a glitch ends with a full battery, never a flat one. It talks to the plug over the home network only. |

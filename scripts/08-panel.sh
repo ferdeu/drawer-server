@@ -30,6 +30,7 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #   PANEL_ROUTER=tplink                     every device on the Wi-Fi, from a TP-Link router's web API
 #                                           (uses ROUTER_URL and ROUTER_PASSWORD)
 #   PANEL_DEVICE_NAMES="F4-70-18-00-00-01=Doorbell,..."   names for devices that don't report one
+#                                           (names given in the panel itself win over these)
 #   PANEL_DEVICE_HIDE="F4-70-18-00-00-03,..."   devices to leave out, e.g. a camera's Wi-Fi turned off on purpose
 #   PANEL_SPEEDTEST=4                       speed tests a day, 0-6 (0: only the "Test again" button);
 #                                           each one moves ~100 MB

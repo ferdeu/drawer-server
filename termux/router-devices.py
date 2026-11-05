@@ -1,6 +1,7 @@
 """Everything a TP-Link router knows about each device, merged by MAC address.
 
-Reads from stdin: router URL, admin password, then 'MAC Name' lines (the names from PANEL_DEVICE_NAMES).
+Reads from stdin: router URL, admin password, then 'MAC Name' lines (the names from PANEL_DEVICE_NAMES);
+names given in the panel itself win over those.
 Merges what's connected now, the DHCP leases, the address reservations and the devices the panel has
 seen before. Prints a table and writes the full detail as JSON to the file given as the first argument.
 Run by scripts/router-devices.sh.
@@ -18,6 +19,10 @@ for line in sys.stdin.read().splitlines():
     if line.strip():
         mac, name = line.split(None, 1)
         names[mac.upper().replace(":", "-")] = name.strip()
+try:  # names given in the panel (tap a device), which win like they do in the panel
+    names.update(json.loads((Path.home() / ".config" / "drawer-server" / "device-names-panel.json").read_text()))
+except (OSError, ValueError):
+    pass
 
 
 def plain(obj):
@@ -114,11 +119,11 @@ for mac, d in sorted(devices.items(), key=lambda kv: (kv[1].get("panel_group") o
 
 # names come from the devices themselves: drop control characters before they reach the terminal
 rows = [tuple("".join(ch for ch in str(x) if ch.isprintable()) for x in row) for row in rows]
-head = ("group", "MAC", "name in .env", "name it reports", "IP", "conn", "AP", "signal", "now", "traffic")
+head = ("group", "MAC", "name given", "name it reports", "IP", "conn", "AP", "signal", "now", "traffic")
 widths = [max(len(str(x)) for x in col) for col in zip(head, *rows)]
 for row in (head, *rows):
     print("  ".join(x.ljust(w) for x, w in zip(row, widths)).rstrip())
 print(f"\n{len(connected)} connected now, {len(devices)} known in all")
 unnamed = [m for m, d in devices.items() if not d["panel_name"] and not d["router_name"]]
 if unnamed:
-    print("No name anywhere (add them to PANEL_DEVICE_NAMES): " + ", ".join(unnamed))
+    print("No name anywhere (tap them in the panel to name them): " + ", ".join(unnamed))

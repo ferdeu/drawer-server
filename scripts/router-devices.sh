@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Everything your TP-Link router knows about each device: name, MAC, IP, fixed address or not,
-# cable / 2.4 / 5 GHz, signal, and whether the panel has seen it before. Use it to pick names
-# for PANEL_DEVICE_NAMES (step 8). Needs the router's admin password, so only the owner can run it.
+# cable / 2.4 / 5 GHz, signal, and whether the panel has seen it before. Use it to find out which
+# device is which before naming it (tap it in the panel, or PANEL_DEVICE_NAMES in step 8). Needs the router's admin password, so only the owner can run it.
 #
 #   Put ROUTER_URL and ROUTER_PASSWORD in .env, then:  bash scripts/router-devices.sh
 #
@@ -27,4 +27,4 @@ mkdir -p "$REPO_ROOT/local"
 scp -q -i "$KEY" -P 8022 "$TERMUX_USER@$HOST:.cache/drawer-server/router-devices.json" \
   "$(localpath "$REPO_ROOT/local/router-devices.json")"
 echo "  Full detail: local/router-devices.json"
-echo "  To name a device: add MAC=Name to PANEL_DEVICE_NAMES in .env, then bash scripts/08-panel.sh"
+echo "  To name a device: tap it in the panel (from home), or add MAC=Name to PANEL_DEVICE_NAMES and run step 8"
