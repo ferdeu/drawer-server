@@ -51,7 +51,8 @@ ones you don't have.
 
 1. **Run steps 0–5 first** (`bash setup.sh`), so the server is on the Wi-Fi with a fixed IP.
 2. **Give fixed IPs** in your router to the phones in "who's home" and to the printer, the same
-   way you did for the server in step 4. Write down which IP is whose.
+   way you did for the server in step 4. Write down which IP is whose. (With a TP-Link router and
+   the devices card on, you can also do it later from the panel, see step 5.)
 3. **Fill `.env`**. A full example:
    ```bash
    PANEL_LANG=en
@@ -75,6 +76,14 @@ ones you don't have.
    Names given in the panel win over those, and both win over the reported ones. Phones often make
    up a new MAC for each network (and some change it now and then), so a phone's name may not stick.
 
+   **Fix an IP.** Tapping a device also shows its IP and whether it's fixed ("Fixed IP 192.168.1.40 ✓").
+   A connected device without one gets **📌 Fix the IP …** (from home; it asks first): the router
+   keeps the address the device has right now for it from then on, so nothing changes today. Do it
+   for anything you reach by address, like the printer, the cameras or a computer. A device whose
+   IP is set on the device itself gets no button (the router doesn't lend it one). People's phones
+   and the plug don't show in this list: fix theirs in the router's page. Unfixing stays there too,
+   so a camera can't lose its address by a wrong tap.
+
    To see everything the router knows first, run `bash scripts/router-devices.sh`. It needs the
    router password from `.env` and changes nothing. It prints one line per device (MAC, the name it
    reports, its IP and whether it's fixed, cable or Wi-Fi band, access point, signal, how long it's
@@ -83,6 +92,10 @@ ones you don't have.
 6. Later, **steps 9, 10, 11 and 12** add photo backup, the smart plug, the cameras and the recordings to the page by
    themselves (they restart the panel). Run step 9 with the person's name exactly as in `PANEL_PEOPLE`
    (`bash scripts/09-syncthing.sh Ana`) so their backup shows under them.
+
+Until everything is set up, a line at the bottom of the page lists what can still be added
+("➕ Can be added: printer ink, Starlink… (how)", linking here). It goes away once there's nothing left,
+or with `PANEL_ADDABLE=no` in `.env` (for things you don't have, like a Starlink dish).
 
 To change anything later (a name, a person, a new card), edit `.env` and run
 `bash scripts/08-panel.sh` again. It takes a few seconds and keeps the battery history.
@@ -93,7 +106,7 @@ To change anything later (a name, a person, a new card), edit `.env` and run
 |---|---|
 | 🛰️ Internet | the dish's local gRPC API at `192.168.100.1:9200` (`grpcurl`), no account needed. Shows latency and the download/upload **in use right now**, which is not a speed test. |
 | 🏠 Who's home | pings each phone every 2 min; "home" if it answered in the last 20 min (sleeping phones skip pings). With the router card on, a phone the router lists as connected also counts as home, and tapping a person shows their phone's Wi-Fi and photo backup, and that phone leaves the devices list. |
-| 📶 Devices | asks the TP-Link router (web API, [tplinkrouterc6u](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)) every 5 min for everything connected, grouped by type, with cable/2.4/5 GHz and signal. Devices that leave show as offline for a month, and one that joins the Wi-Fi but never gets an address is flagged (a common reason cameras "go offline"). Tap a device to name it, or to delete an offline one from the list; only from home and from the panel's own page. |
+| 📶 Devices | asks the TP-Link router (web API, [tplinkrouterc6u](https://github.com/AlexandrErohin/TP-Link-Archer-C6U)) every 5 min for everything connected, grouped by type, with cable/2.4/5 GHz and signal. Devices that leave show as offline for a month, and one that joins the Wi-Fi but never gets an address is flagged (a common reason cameras "go offline"). Tap a device to name it, fix its IP (the router keeps its current address for it), or delete an offline one from the list; only from home and from the panel's own page. It also reads which IPs are fixed. |
 | 🖨️ Ink | Epson's own SNMP status query (`@BDC ST2`), which works on old models like the XP-211 that don't fill the standard printer-supplies table. |
 | 📷 Photo backup | Syncthing's local API: whether each phone is connected, how much is left, the download speed. Folders from phones that aren't in `PANEL_PEOPLE` get a card of their own. |
 | 🔌 Smart plug | the panel itself switches the plug: it checks every minute, cuts the charger at 80% and turns it back on at 30% (`CHARGE_HIGH` and `CHARGE_LOW`). If the battery can't be read for 30 minutes it turns the charger on, and the plug comes back on after a power cut, so a glitch ends with a full battery, never a flat one. It talks to the plug over the home network only. |

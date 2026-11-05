@@ -40,8 +40,8 @@ The human may name things loosely ("the panel", "the plug", "photos", "the game"
 
 | Topic | Files |
 |---|---|
-| Status panel web page and its cards (internet, speed test, who's home, devices, ink, processor…) | `termux/panel/panel.py` (processor and watts readers in `system.py`; tests: `bash tests/run-on-phone.sh -k SystemTest`), home-screen icon drawn by `scripts/panel-icons.py`, deployed by `scripts/08-panel.sh`, cards set by `PANEL_*` in `.env` (e.g. `PANEL_SPEEDTEST`, `PANEL_DEVICE_HIDE`) |
-| What the router knows about each device, naming devices | `scripts/router-devices.sh` (read-only; detail in `local/router-devices.json`), names: tap the device in the panel (stored on the phone, `devices()`/`change_device()` in `termux/panel/panel.py`) or `PANEL_DEVICE_NAMES` |
+| Status panel web page and its cards (internet, speed test, who's home, devices, ink, processor…) | `termux/panel/panel.py` (processor and watts readers in `system.py`; tests: `bash tests/run-on-phone.sh -k SystemTest`), home-screen icon drawn by `scripts/panel-icons.py`, deployed by `scripts/08-panel.sh`, cards set by `PANEL_*` in `.env` (e.g. `PANEL_SPEEDTEST`, `PANEL_DEVICE_HIDE`), the "Can be added" line by `addable()` (`PANEL_ADDABLE=no` hides it) |
+| What the router knows about each device, naming devices | `scripts/router-devices.sh` (read-only; detail in `local/router-devices.json`), names: tap the device in the panel (stored on the phone, `devices()`/`change_device()` in `termux/panel/panel.py`) or `PANEL_DEVICE_NAMES`; fixing an IP from the panel: `fix_device()`, `reservations()`, `router_session()` |
 | Charging between 30 and 80% (smart plug) | `scripts/10-smart-plug.sh`, `termux/plug-setup.py`; the cycling itself runs inside the panel |
 | Photo backup from family phones | `scripts/09-syncthing.sh` |
 | Security cameras in the panel (stills, live view) | `scripts/11-cameras.sh` (go2rtc), `termux/panel/cameras.py`; tests: `bash tests/run-on-phone.sh` |

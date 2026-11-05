@@ -7,6 +7,7 @@ import threading
 import time
 import types
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -700,6 +701,126 @@ class DevicesTest(unittest.TestCase):
     def status_home(self):
         with urllib.request.urlopen(self.base + "/api/status", timeout=10) as r:
             return json.loads(r.read())["at_home"]
+
+    def fake_router(self, client):
+        """tplinkrouterc6u swapped for one that hands out `client`."""
+        fake = types.ModuleType("tplinkrouterc6u")
+        fake.TplinkRouterProvider = types.SimpleNamespace(get_client=lambda url, pw: client)
+        return unittest.mock.patch.dict(sys.modules, {"tplinkrouterc6u": fake})
+
+    def device(self, mac):
+        return next(d for d in panel._home["devices"]["devices"] if d["mac"] == mac)
+
+    def test_fix_ip(self):
+        panel._dv_last.update(fixed={}, lent={self.ON: "192.168.1.20"})
+        self.send("POST", f"/api/devices/{self.ON}/name", {"name": "Cámara Ñandú (WiFi)"})
+        router = FixRouter()
+        with self.fake_router(router):
+            code, out = self.send("POST", f"/api/devices/{self.ON}/fix")
+        self.assertEqual(code, 200)
+        self.assertEqual(router.added, [(self.ON, "192.168.1.20", "Camara Nandu WiFi")])
+        self.assertTrue(router.logged_out)
+        d = next(d for d in out["devices"]["devices"] if d["mac"] == self.ON)
+        self.assertEqual((d["fixed"], d["can_fix"]), ("192.168.1.20", False))
+        with self.fake_router(router):
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/fix")[0], 404)  # fixed already
+        self.assertEqual(len(router.added), 1)
+
+    def test_fix_counts_despite_logout_error(self):
+        panel._dv_last.update(fixed={}, lent={self.ON: "192.168.1.20"})
+        router = FixRouter(logout_fails=True)
+        with self.fake_router(router):
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/fix")[0], 200)
+        self.assertEqual(self.device(self.ON)["fixed"], "192.168.1.20")
+
+    def test_fix_list_fields(self):
+        panel._dv_last.update(fixed={self.OFF: "192.168.1.50"}, lent={self.ON: "192.168.1.20"})
+        panel._home["devices"] = panel.device_list(json.loads(panel.DEVICES_SEEN.read_text()))
+        self.assertEqual((self.device(self.OFF)["fixed"], self.device(self.OFF)["can_fix"]), ("192.168.1.50", False))
+        self.assertEqual((self.device(self.ON)["fixed"], self.device(self.ON)["can_fix"]), (None, True))
+        # someone else has its address reserved; or the router can't tell
+        panel._dv_last["fixed"] = {self.OFF: "192.168.1.20"}
+        self.assertFalse(panel.device_list(json.loads(panel.DEVICES_SEEN.read_text()))["devices"][0]["can_fix"])
+        panel._dv_last["fixed"] = None
+        self.assertEqual({d["can_fix"] for d in panel.device_list(json.loads(panel.DEVICES_SEEN.read_text()))["devices"]}, {False})
+        # an IP set on the device itself: the router lends it nothing, so there's nothing to fix
+        panel._dv_last.update(fixed={}, lent={})
+        self.assertEqual({d["can_fix"] for d in panel.device_list(json.loads(panel.DEVICES_SEEN.read_text()))["devices"]}, {False})
+
+    def test_fix_refused(self):
+        panel._dv_last.update(fixed={}, lent={self.ON: "192.168.1.20"})
+        router = FixRouter(lent={self.ON: "192.168.1.99"})  # the router lent it another address meanwhile
+        with self.fake_router(router):
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/fix")[0], 404)
+            self.assertEqual(self.send("POST", f"/api/devices/{self.OFF}/fix")[0], 404)  # offline
+            self.assertEqual(self.send("DELETE", f"/api/devices/{self.ON}/fix")[0], 404)
+            panel.is_home = lambda ip: False
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/fix")[0], 403)
+            panel.is_home = lambda ip: True
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/fix", headers={"Origin": "http://evil.example"})[0], 403)
+        self.assertEqual(router.added, [])
+        self.assertFalse(self.device(self.ON)["can_fix"])  # it learned the new address: no button now
+        panel._dv_last["lent"] = {self.ON: "192.168.1.20"}
+        with self.fake_router(FixRouter(fail=True)):
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/fix")[0], 502)
+        panel._dv_last["fixed"] = None  # a router model that can't
+        with self.fake_router(router):
+            self.assertEqual(self.send("POST", f"/api/devices/{self.ON}/fix")[0], 404)
+        self.assertEqual(router.added, [])
+
+    def test_reader_reads_fixed(self):
+        router = FixRouter(fixed={self.OFF: "192.168.1.50", "02-AB-CD-00-00-09": "192.168.1.60"})
+        router.disabled = {"02-AB-CD-00-00-09"}  # turned off in the router's page: not fixed
+        with self.fake_router(router):
+            panel.devices()
+        self.assertEqual(panel._dv_last["fixed"], {self.OFF: "192.168.1.50"})
+        self.assertEqual(panel._dv_last["lent"], {self.ON: "192.168.1.20"})
+        self.assertEqual(self.device(self.OFF)["fixed"], "192.168.1.50")
+        self.assertTrue(self.device(self.ON)["can_fix"])
+
+    def test_addable(self):
+        add = panel.addable()
+        self.assertNotIn("devices", add)  # the router file is there
+        self.assertIn("printer", add)
+        (panel.CONFIG / "printer").write_text("192.168.1.30\n")
+        self.assertNotIn("printer", panel.addable())
+        (panel.CONFIG / "addable-off").touch()  # PANEL_ADDABLE=no
+        self.assertEqual(panel.addable(), [])
+
+
+class FixRouter:
+    """A router with fixed addresses, lending ON its usual one."""
+    def __init__(self, fixed=None, lent=None, fail=False, logout_fails=False):
+        self.fixed, self.fail, self.added, self.logged_out = dict(fixed or {}), fail, [], False
+        self.logout_fails, self.disabled = logout_fails, set()
+        self.lent = lent if lent is not None else {DevicesTest.ON: "192.168.1.20"}
+
+    def authorize(self):
+        if self.fail:
+            raise OSError("router busy")
+
+    def logout(self):
+        self.logged_out = True
+        if self.logout_fails:
+            raise OSError("session already gone")
+
+    def get_status(self):
+        dev = types.SimpleNamespace(macaddr=DevicesTest.ON, ipaddr="192.168.1.20", hostname="Android",
+                                    type=types.SimpleNamespace(name="HOST_2G"), signal=-60)
+        return types.SimpleNamespace(devices=[dev])
+
+    def request(self, *a):
+        return {"ssid": "Casa"}
+
+    def get_ipv4_reservations(self):
+        return [types.SimpleNamespace(macaddr=m, ipaddr=ip, enabled=m not in self.disabled) for m, ip in self.fixed.items()]
+
+    def get_ipv4_dhcp_leases(self):
+        return [types.SimpleNamespace(macaddr=m, ipaddr=ip) for m, ip in self.lent.items()]
+
+    def add_ipv4_reservation(self, mac, ip, comment):
+        self.added.append((mac, ip, comment))
+        self.fixed[mac] = ip
 
 
 class DiskTest(unittest.TestCase):

@@ -7,6 +7,7 @@ how an always-plugged phone behaves over a day.
 
 Runs inside Termux:  python ~/panel/panel.py   ->  http://<phone-ip>:8080
 """
+import contextlib
 import csv
 import html
 import ipaddress
@@ -19,6 +20,7 @@ import socket
 import sys
 import subprocess
 import threading
+import unicodedata
 import time
 import urllib.parse
 import urllib.request
@@ -573,9 +575,12 @@ def device_kind(name, mac):
     return "other"
 
 
-DEVICE_PATH = re.compile(r"/api/devices/([0-9A-F]{2}(?:-[0-9A-F]{2}){5})(/name)?")
+DEVICE_PATH = re.compile(r"/api/devices/([0-9A-F]{2}(?:-[0-9A-F]{2}){5})(/name|/fix)?")
 _devices_lock = threading.Lock()  # the router reader and the panel's rename/forget buttons share these files
-_dv_last = {"read": False, "online": set(), "ssid": None}  # the last router read, to redraw the list after a change
+_router_lock = threading.Lock()  # TP-Link allows one admin at a time: the reader and the "fix the IP" button take turns
+# the last router read, to redraw the list after a change; fixed: MAC -> reserved IP, lent: MAC -> IP the
+# router lends it now (a device that set its own IP has none); both None if unknown
+_dv_last = {"read": False, "online": set(), "ssid": None, "fixed": None, "lent": None}
 
 
 def device_names():
@@ -613,21 +618,20 @@ def devices():
     'MAC Name' lines in ~/.config/drawer-server/device-names, and MACs to leave out (one per line,
     e.g. a camera's Wi-Fi that was turned off on purpose) in ~/.config/drawer-server/device-hide.
     Names given in the panel go to ~/.config/drawer-server/device-names-panel.json."""
-    from tplinkrouterc6u import TplinkRouterProvider  # only installed when the router card is on
-    url, password = (CONFIG / "router").read_text().splitlines()[:2]
     try:
-        router = TplinkRouterProvider.get_client(url, password)
-        router.authorize()  # TP-Link allows one admin at a time: this logs out a browser session
-        try:
+        with _router_lock, router_session() as router:
             connected = router.get_status().devices
             try:
                 ssid = router.request("admin/wireless?form=wireless_2g", "operation=read").get("ssid")
             except Exception:
                 ssid = None
-        finally:
-            router.logout()
+            try:
+                fixed, lent = reservations(router), leases(router)
+            except Exception:
+                fixed = lent = None
     except Exception:
-        _dv_last["read"] = False  # who's online is unknown: no renaming or forgetting until a read works
+        # who's online is unknown: no renaming, forgetting or fixing until a read works
+        _dv_last.update(read=False, fixed=None, lent=None)
         raise
     with _devices_lock:
         seen = read_json(DEVICES_SEEN)
@@ -644,13 +648,42 @@ def devices():
         for mac in [m for m, d in seen.items() if now - d["last"] > 30 * 86400]:
             del seen[mac]  # forget devices gone for a month
         write_json(DEVICES_SEEN, seen)
-        _dv_last.update(read=True, online=online, ssid=ssid)
+        _dv_last.update(read=True, online=online, ssid=ssid, fixed=fixed, lent=lent)
         _home["devices"] = device_list(seen)  # inside the lock, so it can't undo a rename made meanwhile
+
+
+@contextlib.contextmanager
+def router_session():
+    """Logged in to the router, and logged out after: while we're in, nobody else can be."""
+    from tplinkrouterc6u import TplinkRouterProvider  # only installed when the router card is on
+    url, password = (CONFIG / "router").read_text().splitlines()[:2]
+    router = TplinkRouterProvider.get_client(url, password)
+    router.authorize()  # TP-Link allows one admin at a time: this logs out a browser session
+    try:
+        yield router
+    finally:
+        try:
+            router.logout()
+        except Exception as e:  # what was done inside still counts
+            print("router logout failed:", e, file=sys.stderr, flush=True)
+
+
+def reservations(router):
+    """MAC -> IP of the router's fixed addresses that are on, or None if this router model can't add them."""
+    if not hasattr(router, "add_ipv4_reservation"):
+        return None
+    return {r.macaddr.upper(): r.ipaddr for r in router.get_ipv4_reservations() if getattr(r, "enabled", True)}
+
+
+def leases(router):
+    """MAC -> IP the router lends each device now."""
+    return {x.macaddr.upper(): x.ipaddr for x in router.get_ipv4_dhcp_leases()}
 
 
 def device_list(seen):
     """What the page shows, from the devices seen and the last router read."""
     names, online, now = device_names(), _dv_last["online"], time.time()
+    fixed, lent = _dv_last["fixed"], _dv_last["lent"] or {}
     hide = set()
     if (CONFIG / "device-hide").exists():
         hide = {m.strip().upper().replace(":", "-") for m in (CONFIG / "device-hide").read_text().split()}
@@ -659,10 +692,15 @@ def device_list(seen):
         if mac in hide:
             continue
         name = names.get(mac) or d["host"] or (d["ip"] or mac)
+        ip = d["ip"] if mac in online else None
         # last_ip lets the page match a device to a person's phone even while it's away
-        result.append({"name": name, "kind": device_kind(name, mac), "ip": d["ip"] if mac in online else None,
+        result.append({"name": name, "kind": device_kind(name, mac), "ip": ip,
                        "last_ip": d["ip"], "conn": d["conn"], "signal": d["signal"], "online": mac in online,
-                       "seen_min_ago": round((now - d["last"]) / 60), "mac": mac, "host": d["host"]})
+                       "seen_min_ago": round((now - d["last"]) / 60), "mac": mac, "host": d["host"],
+                       "fixed": (fixed or {}).get(mac),
+                       # only the address the router lends it right now, and only if nobody else has it reserved
+                       "can_fix": fixed is not None and bool(ip) and lent.get(mac) == ip
+                                  and mac not in fixed and ip not in fixed.values()})
     result.sort(key=lambda x: (KINDS.index(x["kind"]), not x["online"], x["name"].lower()))
     return {"ssid": _dv_last["ssid"], "devices": result}
 
@@ -689,6 +727,42 @@ def change_device(mac, name=None, forget=False):
         write_json(path, given)
         _home["devices"] = device_list(seen)
         return _home["devices"]
+
+
+def fix_device(mac):
+    """The panel's "fix the IP" button: from now on the router always gives this device the address
+    it has now, so it doesn't change. Returns the new list, or None if the device can't be fixed
+    (offline, fixed already, or a router that can't). Raises if the router doesn't answer."""
+    with _router_lock:
+        with _devices_lock:
+            d = next((d for d in device_list(read_json(DEVICES_SEEN))["devices"] if d["mac"] == mac), None)
+        if not d or not d["can_fix"]:
+            return None
+        with router_session() as router:
+            # the list can be 5 minutes old: check on the router that the address is still its own
+            fixed, lent = reservations(router), leases(router)
+            if mac not in fixed and d["ip"] not in fixed.values() and lent.get(mac) == d["ip"]:
+                # the router's comment field: plain letters only, "Cámara" -> "Camara"
+                plain = unicodedata.normalize("NFKD", d["name"]).encode("ascii", "ignore").decode()
+                router.add_ipv4_reservation(mac, d["ip"], re.sub(r"[^A-Za-z0-9 ._-]", "", plain).strip()[:32])
+                fixed = reservations(router)
+        with _devices_lock:
+            _dv_last.update(fixed=fixed, lent=lent)
+            _home["devices"] = device_list(read_json(DEVICES_SEEN))
+            return _home["devices"] if fixed.get(mac) == d["ip"] else None
+
+
+def addable():
+    """The optional parts not set up yet, for the "can be added" line at the bottom of the page
+    (PANEL_ADDABLE=no turns it off)."""
+    if (CONFIG / "addable-off").exists():
+        return []
+    parts = {"cameras": bool(CAMERA_NAMES), "devices": (CONFIG / "router").exists(),
+             "people": (CONFIG / "people").exists(), "printer": (CONFIG / "printer").exists(),
+             "starlink": (CONFIG / "starlink").exists(), "speedtest": speed_per_day() is not None,
+             "plug": PLUG_CONFIG.exists(), "nextdns": (HOME / ".termux" / "boot" / "20-nextdns-link.sh").exists(),
+             "luanti": (HOME / "luanti").exists(), "syncthing": (HOME / ".termux" / "boot" / "50-syncthing.sh").exists()}
+    return [k for k, on in parts.items() if not on]
 
 
 def start_home_readers():
@@ -806,7 +880,8 @@ def status(client_ip="127.0.0.1"):
             "recordings": {"home": is_home(client_ip)} if recordings_shown()
                           else {"off": True} if shows_recordings(read_kv(CONFIG / "panel-recordings")) else None,
             # the server and its plug show in the server section, not with the other devices
-            "self_ip": my_ip(), "plug_ip": PLUG_CONFIG.read_text().split()[1] if PLUG_CONFIG.exists() else None}
+            "self_ip": my_ip(), "plug_ip": PLUG_CONFIG.read_text().split()[1] if PLUG_CONFIG.exists() else None,
+            "addable": addable()}
 
 
 TEXT = {
@@ -866,6 +941,14 @@ TEXT = {
            "dv_name": "Name", "dv_name_ph": "Give it a name", "dv_save": "Save", "dv_forget": "Delete from the list",
            "dv_forget_q": "Delete {n} from the list? If it connects again, it shows up again.",
            "dv_fail": "Couldn't save it.", "dv_away": "This can only be done from home.",
+           "dv_fixed": "Fixed IP {ip}", "dv_lent": "IP {ip} · changes now and then (the router lends it)",
+           "dv_fix": "📌 Fix the IP {ip}", "dv_fixing": "Asking the router…",
+           "dv_fix_q": "Always give {n} the IP {ip}? Nothing changes now: the router keeps that address for it from now on.",
+           "dv_fix_fail": "The router didn't take it. Try again in a while.",
+           "add_more": "➕ Can be added: {list} ({how})", "add_how": "how",
+           "add_names": {"cameras": "cameras", "devices": "Wi-Fi devices (TP-Link)", "people": "who's home", "printer": "printer ink",
+                         "starlink": "Starlink", "speedtest": "speed test", "plug": "smart plug",
+                         "nextdns": "ad blocking", "luanti": "game for the kids", "syncthing": "photo backup"},
            "p_obstructed": "{cam} looks obstructed, check it ({what})", "p_still_rec": "still recording",
            "p_paused": "recording paused", "p_not_rec": "{cam} not recording", "p_rec_down": "recorder stopped",
            "p_disk_full": "Disk almost full: recording stopped",
@@ -928,6 +1011,15 @@ TEXT = {
            "dv_name": "Nombre", "dv_name_ph": "Ponele un nombre", "dv_save": "Guardar", "dv_forget": "Borrar de la lista",
            "dv_forget_q": "¿Borrar {n} de la lista? Si se vuelve a conectar, aparece de nuevo.",
            "dv_fail": "No se pudo guardar.", "dv_away": "Solo se puede desde casa.",
+           "dv_fixed": "IP fija {ip}", "dv_lent": "IP {ip} · cambia cada tanto (el router se la presta)",
+           "dv_fix": "📌 Fijar la IP {ip}", "dv_fixing": "Hablando con el router…",
+           "dv_fix_q": "¿Dejarle siempre la IP {ip} a {n}? Ahora no cambia nada: el router se la guarda de acá en adelante.",
+           "dv_fix_fail": "El router no la tomó. Probá de nuevo en un rato.",
+           "add_more": "➕ Se puede agregar: {list} ({how})", "add_how": "cómo",
+           "add_names": {"cameras": "cámaras", "devices": "dispositivos del Wi-Fi (TP-Link)", "people": "quién está en casa",
+                         "printer": "tinta de la impresora", "starlink": "Starlink", "speedtest": "test de velocidad",
+                         "plug": "enchufe inteligente", "nextdns": "bloqueo de publicidad", "luanti": "juego para los chicos",
+                         "syncthing": "copia de fotos"},
            "p_obstructed": "{cam} parece tapada, revisala ({what})", "p_still_rec": "sigue grabando",
            "p_paused": "grabación en pausa", "p_not_rec": "{cam} no está grabando", "p_rec_down": "el grabador se detuvo",
            "p_disk_full": "Disco casi lleno: se dejó de grabar",
@@ -1067,6 +1159,9 @@ PAGE = """<!doctype html>
   .dvx button.pill { margin:0; border:0; font:inherit; font-size:14px; color:var(--ink); cursor:pointer; }
   .dvx button.save { background:var(--line); color:#fff; }
   .dvx button.del { margin-top:8px; color:var(--bad); background:var(--card); }
+  .dvx button.fix { margin-top:8px; background:var(--card); }
+  .dvx .ok { color:var(--ok); }
+  #addable a { color:var(--line); }
   .net button.pill { margin:0 0 0 auto; }
   .cams { display:grid; grid-template-columns:repeat(auto-fit, minmax(100px, 1fr)); gap:8px; margin-top:8px; }
   .cam { position:relative; aspect-ratio:16/9; background:var(--soft); border:0; border-radius:10px; padding:0; overflow:hidden; cursor:pointer; }
@@ -1162,6 +1257,7 @@ PAGE = """<!doctype html>
 <section class="card sec hidden" id="dv"><div class="sec-h" data-s="dv" role="button" tabindex="0"><span class="label" id="dv_title"></span><span class="sub right sum" id="dv_sum"></span></div><div id="dv_list"></div></section>
 <section class="card sec hidden" id="pr"><div class="sec-h" data-s="pr" role="button" tabindex="0"><span class="label">🖨️ __PRINTER__</span><span class="sub right sum" id="pr_sum"></span></div>
   <div class="ink" id="pr_ink"></div></section>
+<div class="foot hidden" id="addable"></div>
 <div class="foot" id="foot"></div>
 </main>
 <script>
@@ -1266,6 +1362,7 @@ async function refresh() {
     drawPeople(people, h);
     drawServerWifi(h.devices, s.self_ip);
     dvHome = s.at_home;
+    drawAddable(s.addable || []);
     drawDevices(h.devices, (people ? people.map(x => x.ip) : []).concat([s.self_ip, s.plug_ip]));
     drawPrinter(h.printer);
     drawOverall(s, h);
@@ -1783,23 +1880,37 @@ function drawDevices(dv, hide) {
 
 function deviceBox(d) {
   const named = d.name !== d.last_ip && d.name !== d.mac;  // without a name the list shows its address
-  const info = `<div class="sub">MAC ${esc(d.mac)} · ${d.host ? esc(T.dv_router_calls.replace('{n}', () => d.host)) : T.dv_router_none}</div>`;
+  const info = `<div class="sub">MAC ${esc(d.mac)} · ${d.host ? esc(T.dv_router_calls.replace('{n}', () => d.host)) : T.dv_router_none}</div>` +
+    (d.fixed ? `<div class="sub">${esc(T.dv_fixed.replace('{ip}', d.fixed))} <span class="ok">✓</span></div>`
+      : d.can_fix ? `<div class="sub">${esc(T.dv_lent.replace('{ip}', d.ip))}</div>` : '');
   if (!dvHome) return `<div class="dvx">${info}<div class="sub">${T.dv_away}</div></div>`;
   return `<div class="dvx">${info}
     <form data-mac="${esc(d.mac)}"><input maxlength="40" value="${named ? esc(d.name) : ''}" placeholder="${esc(T.dv_name_ph)}" aria-label="${esc(T.dv_name)}">` +
     `<button class="pill save">${T.dv_save}</button></form>` +
+    (d.can_fix ? `<button class="pill fix" data-mac="${esc(d.mac)}" data-name="${esc(d.name)}" data-ip="${esc(d.ip)}">${esc(T.dv_fix.replace('{ip}', d.ip))}</button>` : '') +
     (d.online ? '' : `<button class="pill del" data-mac="${esc(d.mac)}" data-name="${esc(d.name)}">🗑️ ${T.dv_forget}</button>`) + '</div>';
 }
-async function changeDevice(mac, init) {
-  const r = await fetch('/api/devices/' + mac + (init.method === 'POST' ? '/name' : ''), init).catch(() => null);
-  if (!r || !r.ok) { alert(r && r.status === 403 ? T.dv_away : T.dv_fail); return; }
+async function changeDevice(path, init) {
+  const r = await fetch('/api/devices/' + path, init).catch(() => null);
+  if (!r || !r.ok) {
+    alert(r && r.status === 403 ? T.dv_away : path.endsWith('/fix') ? T.dv_fix_fail : T.dv_fail);
+    document.activeElement.blur();
+    $('dv_list').dataset.html = '';  // same data, so set() would keep the "Asking the router…" button
+    drawDevices(...dvLast);
+    return;
+  }
   dvOpen = null;
   document.activeElement.blur();
   drawDevices((await r.json()).devices, dvLast[1]);
 }
 $('dv_list').addEventListener('click', e => {
-  const del = e.target.closest('button.del'), r = e.target.closest('.dvr');
+  const del = e.target.closest('button.del'), fix = e.target.closest('button.fix'), r = e.target.closest('.dvr');
   if (del && confirm(T.dv_forget_q.replace('{n}', () => del.dataset.name))) changeDevice(del.dataset.mac, {method: 'DELETE'});
+  if (fix && confirm(T.dv_fix_q.replace('{n}', () => fix.dataset.name).replace('{ip}', fix.dataset.ip))) {
+    fix.disabled = true;
+    fix.textContent = T.dv_fixing;  // the router takes a few seconds
+    changeDevice(fix.dataset.mac + '/fix', {method: 'POST'});
+  }
   if (!r) return;
   dvOpen = r.dataset.mac === dvOpen ? null : r.dataset.mac;
   if (document.activeElement) document.activeElement.blur();
@@ -1810,9 +1921,22 @@ $('dv_list').addEventListener('keydown', e => {
 });
 $('dv_list').addEventListener('submit', e => {
   e.preventDefault();
-  changeDevice(e.target.dataset.mac, {method: 'POST', headers: {'Content-Type': 'application/json'},
-                                      body: JSON.stringify({name: e.target.querySelector('input').value})});
+  changeDevice(e.target.dataset.mac + '/name', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                body: JSON.stringify({name: e.target.querySelector('input').value})});
 });
+
+// "Can be added: printer ink, Starlink… (how)", the parts not set up yet, linking to how
+function drawAddable(list) {
+  show('addable', list.length);
+  if (!list.length) return;
+  const a = document.createElement('a');
+  a.href = 'https://github.com/ferdeu/drawer-server/blob/main/docs/panel.md';
+  a.textContent = T.add_how;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  const [before, after = ''] = T.add_more.replace('{list}', () => list.map(k => T.add_names[k] || k).join(', ')).split('{how}');
+  $('addable').replaceChildren(before, a, after);
+}
 
 const INK = {black: '#222', cyan: '#06b6d4', magenta: '#d946ef', yellow: '#facc15'};
 function drawPrinter(pr) {
@@ -1954,15 +2078,27 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def device(self, forget):
-        """Name a device (POST /api/devices/MAC/name, {"name": ...}) or forget an offline one (DELETE
-        /api/devices/MAC), from the devices card. Anyone at home may, like deleting recordings; the
-        page asks before forgetting."""
+        """Name a device (POST /api/devices/MAC/name, {"name": ...}), fix its IP (POST /api/devices/MAC/fix)
+        or forget an offline one (DELETE /api/devices/MAC), from the devices card. Anyone at home may,
+        like deleting recordings; the page asks before fixing or forgetting."""
         m = DEVICE_PATH.fullmatch(self.path)
         if not m or bool(m.group(2)) == forget or not (CONFIG / "router").exists():
             self.send_error(404)
             return
         if not is_home(self.client_address[0]) or not self.same_site():
             self.send_error(403)
+            return
+        if m.group(2) == "/fix":
+            try:
+                devices_now = fix_device(m.group(1))
+            except Exception as e:
+                print("fixing the IP of", m.group(1), "failed:", e, file=sys.stderr, flush=True)
+                self.send_error(502)  # the router didn't answer or didn't take it
+                return
+            if devices_now is not None:
+                self.send_json({"devices": devices_now})
+            else:
+                self.send_error(404)
             return
         name = None
         if not forget:

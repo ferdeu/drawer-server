@@ -37,6 +37,7 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #   PANEL_RECORDINGS=no                     hide the motion recordings section (step 12)
 #   PANEL_TABS="Home=self,School=http://192.168.1.200:8765/|http://school-pc:8765/"   tabs on top to
 #                                           other pages: the home address, then the Tailscale one
+#   PANEL_ADDABLE=no                        hide the "Can be added: …" line at the bottom
 #   DISK_RECORDINGS_GB, DISK_BACKUP_GB, DISK_KEEP_FREE_GB, DISK_BACKUP_PAUSE   disk split (see .env.example)
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
 
@@ -51,6 +52,7 @@ for v in DISK_RECORDINGS_GB DISK_BACKUP_GB DISK_KEEP_FREE_GB; do
 done
 [[ "${DISK_BACKUP_PAUSE:-}" =~ ^(yes|no)?$ ]] || die "DISK_BACKUP_PAUSE should be yes or no"
 [[ "${PANEL_RECORDINGS:-}" =~ ^(yes|no)?$ ]] || die "PANEL_RECORDINGS should be yes or no"
+[[ "${PANEL_ADDABLE:-}" =~ ^(yes|no)?$ ]] || die "PANEL_ADDABLE should be yes or no"
 
 # same rules as tabs() in panel.py: two or more tabs, exactly one self, only http(s) addresses
 TAB_LINES="$(tr ',' '\n' <<<"${PANEL_TABS:-}" | sed 's/^ *//; s/ *$//' | grep . || true)"
@@ -101,8 +103,9 @@ command -v python >/dev/null || pkg install -y python >/dev/null 2>&1
 command -v grpcurl >/dev/null || pkg install -y grpcurl >/dev/null 2>&1
 command -v snmpget >/dev/null || pkg install -y net-snmp >/dev/null 2>&1
 C=~/.config/drawer-server
-rm -f \$C/starlink \$C/printer \$C/speedtest
+rm -f \$C/starlink \$C/printer \$C/speedtest \$C/addable-off
 [ '${PANEL_STARLINK:-}' = yes ] && touch \$C/starlink
+[ '${PANEL_ADDABLE:-}' = no ] && touch \$C/addable-off
 [ -n '${PANEL_PRINTER_IP:-}' ] && echo '${PANEL_PRINTER_IP:-}' > \$C/printer
 if [ -n '${PANEL_SPEEDTEST:-}' ]; then
   command -v speedtest-go >/dev/null || pkg install -y speedtest-go >/dev/null 2>&1
