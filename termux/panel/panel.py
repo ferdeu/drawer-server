@@ -1093,6 +1093,7 @@ PAGE = """<!doctype html>
   .clip .name { position:absolute; left:4px; bottom:4px; background:#0009; color:#fff; font-size:11px; padding:1px 6px; border-radius:6px; }
   .live_msg.col { flex-direction:column; gap:10px; text-align:center; padding:0 24px; }
   .live_msg a { color:#fff; pointer-events:auto; }
+  .home_link a { color:var(--line); }
 </style></head>
 <body><main>
 <nav class="tabs hidden" id="tabs"></nav>
@@ -1116,9 +1117,9 @@ PAGE = """<!doctype html>
 </section>
 
 <section class="card sec hidden" id="cams"><div class="sec-h" data-s="cams" role="button" tabindex="0"><span class="label">📹 __CAMERA__</span><span class="sub right sum" id="cams_sum"></span></div>
-  <div class="cams" id="cam_grid"></div><div class="sub hidden" id="cam_away"></div>
+  <div class="cams" id="cam_grid"></div><div class="sub home_link hidden" id="cam_away"></div>
   <div class="recs hidden" id="rc"><details data-k="rec" id="rc_det"><summary><span>🎞️ __REC__</span><span class="sub right" id="rc_sum"></span></summary>
-    <div class="more" id="rc_body"></div><div class="sub more hidden" id="rc_away"></div></details>
+    <div class="more" id="rc_body"></div><div class="sub more home_link hidden" id="rc_away"></div></details>
     <div class="svc hidden" id="rc_off"><span>🎞️ __REC__</span><span class="sub">__REC_OFF__</span></div></div></section>
 <div class="live hidden" id="clip">
   <div class="live_top"><b id="clip_name"></b><span><button id="clip_del" aria-label="__REC_DELETE__" title="__REC_DELETE__">🗑️</button>
@@ -1395,6 +1396,16 @@ $('speed_btn').onclick = async () => {
 };
 
 // cameras: a still per camera every 2.5 s while the page is visible, tap one for live video
+// "Home only: open <link> on the home Wi-Fi", the link being this panel at its home address
+function homeOnly(id, selfIp) {
+  const url = 'http://' + (selfIp || 'server') + ':' + (location.port || 80);
+  const [before, after = ''] = T.cam_away.split('{url}');
+  if (!selfIp) { $(id).textContent = before + url + after; return; }  // no address known: no link that goes nowhere
+  const a = document.createElement('a');
+  a.href = a.textContent = url;
+  $(id).textContent = before;
+  $(id).append(a, after);
+}
 let cams = null;
 function drawCameras(c, selfIp) {
   cams = c;
@@ -1403,7 +1414,7 @@ function drawCameras(c, selfIp) {
   show('cam_grid', c.home);
   show('cam_away', !c.home);
   if (!c.home) {
-    $('cam_away').textContent = T.cam_away.replace('{url}', 'http://' + (selfIp || 'server') + ':' + (location.port || 80));
+    homeOnly('cam_away', selfIp);
     return;
   }
   const fresh = !$('cam_grid').dataset.html;
@@ -1451,7 +1462,7 @@ function drawRecordings(r, rc, selfIp) {
   $('rc_sum').textContent = rc ? T.rec_sum.replace('{n}', rc.today).replace('{gb}', num(rc.bytes / 1e9, 1)) : T.rec_off;
   show('rc_body', recHome);
   show('rc_away', !recHome);
-  if (!recHome) $('rc_away').textContent = T.cam_away.replace('{url}', 'http://' + (selfIp || 'server') + ':' + (location.port || 80));
+  if (!recHome) homeOnly('rc_away', selfIp);
   else if ($('rc_det').open) loadRecs();
 }
 function dayName(d) {
