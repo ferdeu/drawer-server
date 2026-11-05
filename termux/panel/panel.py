@@ -975,6 +975,9 @@ PAGE = """<!doctype html>
   .tank { background:var(--soft); border-radius:6px; position:relative; height:60px; overflow:hidden; margin-bottom:4px; }
   .tank i { position:absolute; bottom:0; left:0; right:0; border-radius:6px; }
   .hidden { display:none; }
+  .tabs { display:flex; gap:4px; background:var(--soft); border-radius:10px; padding:3px; margin:0 0 12px; font-size:14px; font-weight:600; }
+  .tabs > * { flex:1; text-align:center; padding:6px; border-radius:8px; color:var(--muted); text-decoration:none; }
+  .tabs .on { background:var(--card); color:var(--ink); box-shadow:0 1px 2px #0002; }
   .bar { background:var(--soft); border-radius:4px; height:6px; overflow:hidden; margin:2px 0 6px; }
   .bar i { display:block; height:100%; background:var(--ok); }
   details { border-bottom:1px solid var(--soft); }
@@ -1092,6 +1095,7 @@ PAGE = """<!doctype html>
   .live_msg a { color:#fff; pointer-events:auto; }
 </style></head>
 <body><main>
+<nav class="tabs hidden" id="tabs"></nav>
 <header><h1>🏡 __TITLE__</h1><div class="overall" id="overall"></div></header>
 <div class="alert" id="alert"></div>
 
@@ -1167,6 +1171,19 @@ const $ = id => document.getElementById(id);
 const esc = v => String(v).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const ago = m => m < 60 ? m + ' min' : m < 2880 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + (LANG === 'es' ? ' días' : ' days');
 const num = (v, d) => Number(v).toLocaleString(LANG, d == null ? {} : {minimumFractionDigits: d, maximumFractionDigits: d});
+// tabs to other pages (PANEL_TABS): opened by a home address, link to their home address; else their away one
+const TABS = __TABS__;
+if (TABS.length) {
+  const h = location.hostname, [a, b] = h.split('.').map(Number);
+  const atHome = h === 'localhost' || a === 10 || a === 127 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
+  for (const t of TABS) {
+    const el = document.createElement(t.self ? 'span' : 'a');
+    el.textContent = t.label;
+    if (t.self) { el.className = 'on'; el.setAttribute('aria-current', 'page'); } else el.href = atHome ? t.home : t.away;
+    $('tabs').append(el);
+  }
+  $('tabs').classList.remove('hidden');
+}
 const OK = 'var(--ok)', BAD = 'var(--bad)', WARN = 'var(--warn)', OFF = 'var(--muted)';
 const dot = c => `<span class="dot" style="background:${c}"></span>`;
 const row = (a, b, style) => `<div class="svc"><span>${a}</span><span class="sub"${style ? ` style="${style}"` : ''}>${b}</span></div>`;
@@ -1840,16 +1857,36 @@ def manifest():
                                   "purpose": "maskable"}]}).encode()
 
 
+def tabs():
+    """PANEL_TABS in .env (written by scripts/08-panel.sh): Label=self or Label=home-url|away-url per line.
+    Fewer than two tabs, or none marked self, shows no tab bar."""
+    path = CONFIG / "tabs"
+    out = []
+    for line in path.read_text().splitlines() if path.exists() else []:
+        label, _, target = (part.strip() for part in line.partition("="))
+        if not label:
+            continue
+        if target == "self":
+            out.append({"label": label[:40], "self": True})
+            continue
+        urls = [u.strip() for u in target.split("|")]
+        if 1 <= len(urls) <= 2 and all(re.fullmatch(r"https?://[^\s\"'<>]+", u) for u in urls):
+            out.append({"label": label[:40], "home": urls[0], "away": urls[-1]})
+    return out if len(out) > 1 and any(t.get("self") for t in out) else []
+
+
 def render():
     text = TEXT.get(LANG, TEXT["en"])
     title = CONFIG / "title"  # PANEL_TITLE in .env, written by scripts/08-panel.sh
     text = dict(text, title=title.read_text().strip() if title.exists() else text["title"])
-    # "<" escaped so no text can close the <script> it sits in
-    page = PAGE.replace("__TEXT__", json.dumps(text).replace("<", "\\u003c")).replace("__LANG__", LANG)
+    page = PAGE.replace("__LANG__", LANG)
     for key, value in text.items():
         if isinstance(value, str):
             page = page.replace(f"__{key.upper()}__", html.escape(value))
-    return page.encode()
+    # the JSON goes in last, so a placeholder inside a name is never filled in;
+    # "<" escaped so no text can close the <script> it sits in
+    return (page.replace("__TEXT__", json.dumps(text).replace("<", "\\u003c"))
+            .replace("__TABS__", json.dumps(tabs()).replace("<", "\\u003c")).encode())
 
 
 class Handler(BaseHTTPRequestHandler):

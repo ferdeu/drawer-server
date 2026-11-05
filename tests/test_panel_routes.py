@@ -322,6 +322,23 @@ class RoutesTest(unittest.TestCase):
             (panel.CONFIG / "speedtest").write_text(text + "\n")
             self.assertEqual(panel.speed_per_day(), want, text)
 
+    def test_tabs_setting(self):
+        saved = panel.CONFIG
+        self.addCleanup(lambda: setattr(panel, "CONFIG", saved))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        panel.CONFIG = Path(tmp.name)
+        self.assertEqual(panel.tabs(), [])  # no setting: no tab bar
+        (panel.CONFIG / "tabs").write_text("🏡 Casa=self\n🎒 Colegio = http://192.168.1.200:8765/ | http://deuza-colegio:8765/\n"
+                                           "Bad=javascript:alert(1)\nOne=http://10.0.0.5/\n")
+        self.assertEqual(panel.tabs(), [
+            {"label": "🏡 Casa", "self": True},
+            {"label": "🎒 Colegio", "home": "http://192.168.1.200:8765/", "away": "http://deuza-colegio:8765/"},
+            {"label": "One", "home": "http://10.0.0.5/", "away": "http://10.0.0.5/"}])
+        self.assertIn(b'"away": "http://deuza-colegio:8765/"', panel.render())
+        (panel.CONFIG / "tabs").write_text("Colegio=http://192.168.1.200:8765/\n")  # no tab for this panel
+        self.assertEqual(panel.tabs(), [])
+
     def test_player_script(self):
         code, body, headers = self.fetch("/live/video-rtc.js")
         self.assertEqual((code, body), (200, b"export class VideoRTC {}"))

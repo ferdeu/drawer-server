@@ -33,6 +33,7 @@ ones you don't have.
 |---|---|---|
 | Name on top | nothing | `PANEL_TITLE="Our house"` |
 | Spanish | nothing | `PANEL_LANG=es` |
+| Tabs to another panel | another web page you want one tap away (for example a panel on your computer) | `PANEL_TABS="🏡 Home=self,🎒 School=http://192.168.1.200:8765/\|http://school-pc:8765/"`: `self` is this panel; for the others, the address at home, then the Tailscale one. Opened by a home address, the tab links to the first, otherwise to the second (so the cameras keep working at home) |
 | 🛰️ Internet | a Starlink dish | `PANEL_STARLINK=yes` |
 | 🚀 Speed test | nothing; each test moves ~100 MB, mind data caps | `PANEL_SPEEDTEST=4`: tests a day, 0 to 6 (0 = only the "Test again" button) |
 | 🏠 Who's home | each person's phone with a fixed IP in the router | `PANEL_PEOPLE="Ana=192.168.1.20,Bo=192.168.1.21"` (simple names: letters, numbers, - or _) |

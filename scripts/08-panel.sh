@@ -35,6 +35,8 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #   PANEL_SPEEDTEST=4                       speed tests a day, 0-6 (0: only the "Test again" button);
 #                                           each one moves ~100 MB
 #   PANEL_RECORDINGS=no                     hide the motion recordings section (step 12)
+#   PANEL_TABS="Home=self,School=http://192.168.1.200:8765/|http://school-pc:8765/"   tabs on top to
+#                                           other pages: the home address, then the Tailscale one
 #   DISK_RECORDINGS_GB, DISK_BACKUP_GB, DISK_KEEP_FREE_GB, DISK_BACKUP_PAUSE   disk split (see .env.example)
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
 
@@ -50,10 +52,21 @@ done
 [[ "${DISK_BACKUP_PAUSE:-}" =~ ^(yes|no)?$ ]] || die "DISK_BACKUP_PAUSE should be yes or no"
 [[ "${PANEL_RECORDINGS:-}" =~ ^(yes|no)?$ ]] || die "PANEL_RECORDINGS should be yes or no"
 
+# same rules as tabs() in panel.py: two or more tabs, exactly one self, only http(s) addresses
+TAB_LINES="$(tr ',' '\n' <<<"${PANEL_TABS:-}" | sed 's/^ *//; s/ *$//' | grep . || true)"
+url="https?://[^ |\"'<>]+"
+if [ -n "$TAB_LINES" ] && { grep -qvE "^[^=]+= *(self|$url( *\| *$url)?)$" <<<"$TAB_LINES" ||
+    [ "$(grep -cE '^[^=]+= *self$' <<<"$TAB_LINES")" -ne 1 ] || [ "$(wc -l <<<"$TAB_LINES")" -lt 2 ]; }; then
+  die "PANEL_TABS: Label=self for this panel, and Label=home-address|away-address for each other page, comma separated"
+fi
+
 # the router password, names and title go over stdin, never inside a command line
-phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names ~/.config/drawer-server/device-hide ~/.config/drawer-server/title ~/.config/drawer-server/people'
+phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names ~/.config/drawer-server/device-hide ~/.config/drawer-server/title ~/.config/drawer-server/people ~/.config/drawer-server/tabs'
 if [ -n "${PANEL_TITLE:-}" ]; then
   printf '%s\n' "$PANEL_TITLE" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/title'
+fi
+if [ -n "$TAB_LINES" ]; then
+  printf '%s\n' "$TAB_LINES" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/tabs'
 fi
 if [ -n "$PEOPLE_LINES" ]; then
   printf '%s\n' "$PEOPLE_LINES" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/people'
