@@ -111,7 +111,7 @@ fi
 
 # --- switch ---
 # [s]yncthing etc.: the pattern must not match this ssh command's own shell
-STOP='pkill -f [s]yncthing; pkill -f [l]uantiserver; pkill -f [p]anel.py; pkill -f [g]o2rtc; pkill -f [r]ecorder.py; pkill -f [-]user_agent\ drawer-recorder; pkill -f [n]extdns-link-loop'
+STOP='pkill -f [s]yncthing; pkill -f [l]uantiserver; pkill -f [p]anel.py; pkill -f [g]o2rtc; pkill -f [r]ecorder.py; pkill -f [-]user_agent\ drawer-recorder; pkill -f [n]extdns-link-loop; pkill -f [t]ailscale-watch'
 # Luanti saves the world and Syncthing closes its database on the way out: wait for both
 STOPPED='for i in $(seq 1 30); do pgrep -f "[s]yncthing|[l]uantiserver" >/dev/null || exit 0; sleep 1; done; exit 1'
 say "Stopping the services on both phones"
@@ -143,7 +143,7 @@ new_ssh '[ -f ~/.termux/boot/50-syncthing.sh ] && ! command -v syncthing >/dev/n
 
 say "Starting everything on the new phone"
 new_ssh 'for f in ~/.termux/boot/*; do sh "$f" >/dev/null 2>&1; done; sleep 5;
-  for p in sshd syncthing luantiserver panel.py go2rtc recorder.py nextdns-link-loop; do
+  for p in sshd syncthing luantiserver panel.py go2rtc recorder.py nextdns-link-loop tailscale-watch; do
     if pgrep -f "[${p:0:1}]${p:1}" >/dev/null; then echo "  running: $p"; else echo "  not running: $p"; fi; done'
 
 NEW_MAC="${PHONE_MAC:-(run step 4 to see it)}"

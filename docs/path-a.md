@@ -155,7 +155,12 @@ so nobody outside can reach yours directly.
 for personal use. The script opens the Play Store for you. Install it, log in, and accept the VPN
 permission. Then install Tailscale on your computer or other phone with the same account.
 
-The script also sets Tailscale as the **always-on VPN**, so it reconnects after a reboot. The phone needs a Google account signed in to install from the Play Store.
+The script also sets Tailscale as the **always-on VPN**, so it reconnects after a reboot. Always-on
+doesn't always bring it back after a drop, so the script also leaves a small watcher on the phone:
+every 2 minutes it checks for the Tailscale address and, if it's gone, asks the app to connect
+(log in `~/.cache/tailscale-watch.log`). That also means turning Tailscale off in its app only
+lasts 2 minutes; to really turn it off, first stop the watcher in Termux:
+`rm ~/.termux/boot/15-tailscale-watch.sh; pkill -f bin/tailscale-watch`. The phone needs a Google account signed in to install from the Play Store.
 **Then turn off key expiry**, or the server drops out of Tailscale after 180 days and someone has to
 log it in again by hand: on [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines),
 open the **…** menu on the phone's row → **Disable key expiry**.
@@ -258,7 +263,9 @@ You need cameras that speak RTSP (tested: Ezviz H8c; Hikvision works the same), 
 IP in the router. In `.env`: `PANEL_CAMERAS="Front=192.168.1.50:ABCDEF,Back=192.168.1.52:GHIJKL"`;
 for Ezviz the code is the verification code on the camera's sticker. The step installs
 [go2rtc](https://github.com/AlexxIT/go2rtc) (pinned version, checksum checked), which connects to
-each camera once and only listens on the phone itself.
+each camera once and only listens on the phone itself. Other apps on the server phone could still
+read its streams: go2rtc never asks for a password from the same phone. So keep the server phone
+for the server, and don't install other apps on it.
 
 At home, open the panel by its Wi-Fi address (`http://<phone-ip>:8080`), not the Tailscale one, or
 the cameras show as "home only". There's no login: anyone on the home Wi-Fi can open the panel and
