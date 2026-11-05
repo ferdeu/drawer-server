@@ -3,6 +3,10 @@
 A web page on the server that tells you, at a glance, whether everything at home works.
 Open it from any phone or computer on your Wi-Fi at `http://<server-ip>:8080`, or from anywhere
 with Tailscale on at `http://<server-tailscale-ip>:8080` (step 8 prints both addresses).
+To open it with one tap, in Chrome's menu choose **Add to Home screen** (on an iPhone, Safari's
+**Share** → **Add to Home Screen**): it gets the panel's own icon
+(drawn by `scripts/panel-icons.py`; edit it and run step 8 again to change it). It still opens with
+the address bar: opening as a full-screen app needs `https`, and the panel is plain `http`.
 
 <img src="img/panel.jpg" alt="The status panel on a phone: title 'Our house', 'Everything works', internet latency and speed in use, who's home with each person's photo backup, the server's battery, temperature, processor, memory, storage and smart plug, services, devices on the Wi-Fi grouped by type, and printer ink." width="320">
 

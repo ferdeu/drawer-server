@@ -118,6 +118,16 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(self.fetch("/api/camera/1.jpg")[0], 403)
         self.assertEqual(panel.STILLS.asked, [])
 
+    def test_home_screen_icon(self):
+        code, body, headers = self.fetch("/manifest.json")
+        icons = json.loads(body)["icons"]
+        self.assertEqual(code, 200)
+        for icon in icons:
+            code, body, headers = self.fetch(icon["src"])
+            self.assertEqual((code, headers["Content-Type"], body[:4]), (200, "image/png", b"\x89PNG"), icon["src"])
+        self.assertEqual(self.fetch("/apple-touch-icon.png")[0], 200)
+        self.assertEqual(self.fetch("/panel.py")[0], 404)
+
     def test_status_cameras(self):
         cams = json.loads(self.fetch("/api/status")[1])["cameras"]
         self.assertEqual(cams, {"names": ["Entrada", "Lateral", "Fondo"], "home": True})

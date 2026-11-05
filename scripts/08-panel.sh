@@ -21,7 +21,7 @@ CHARGE_HIGH="${CHARGE_HIGH:-80}"
 say "Copying the panel to the phone"
 phone_ssh "$HOST" 'mkdir -p ~/panel'
 scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
-  "$REPO_ROOT"/termux/panel/*.py "$TERMUX_USER@$HOST:panel/"
+  "$REPO_ROOT"/termux/panel/*.py "$REPO_ROOT"/termux/panel/*.png "$TERMUX_USER@$HOST:panel/"
 
 # Optional home cards, configured from .env:
 #   PANEL_STARLINK=yes                      read the Starlink dish (192.168.100.1)

@@ -160,6 +160,10 @@ The script also sets Tailscale as the **always-on VPN**, so it reconnects after 
 log it in again by hand: on [login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines),
 open the **…** menu on the phone's row → **Disable key expiry**.
 
+**A name instead of a number (optional):** on the same page, **…** → **Edit machine name**, for
+example `server`. Then the panel opens at `http://server:8080` from any device with Tailscale on, instead of
+`http://100.x.y.z:8080` (Tailscale's MagicDNS does this, and it's on by default).
+
 If **Log in** does nothing, the phone has no web browser for the login page. Bring Chrome back with
 `adb shell cmd package install-existing com.android.chrome` (running `extra-debloat.sh` again does
 it too; older versions of it removed Chrome).

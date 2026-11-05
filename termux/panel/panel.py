@@ -940,6 +940,10 @@ PAGE = """<!doctype html>
 <html lang="__LANG__"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#2563eb">
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#6b7280; --ok:#16a34a; --bad:#dc2626; --warn:#d97706; --line:#2563eb; --soft:#8882; }
   @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#181c24; --ink:#e6e8ee; --muted:#9aa3b2; --line:#60a5fa; } }
@@ -1820,6 +1824,22 @@ refresh(); setInterval(refresh, 10000);
 </body></html>"""
 
 
+# the icon for "Add to Home screen"
+ICONS = {name: Path(__file__).with_name(name)
+         for name in ("icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png")}
+
+
+def manifest():
+    title = CONFIG / "title"
+    name = title.read_text().strip() if title.exists() else TEXT.get(LANG, TEXT["en"])["title"]
+    return json.dumps({"name": name, "short_name": name, "start_url": "/", "display": "standalone",
+                       "background_color": "#f6f7f9", "theme_color": "#2563eb",
+                       "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                                 {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                                 {"src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png",
+                                  "purpose": "maskable"}]}).encode()
+
+
 def render():
     text = TEXT.get(LANG, TEXT["en"])
     title = CONFIG / "title"  # PANEL_TITLE in .env, written by scripts/08-panel.sh
@@ -1856,6 +1876,10 @@ class Handler(BaseHTTPRequestHandler):
             body, kind = json.dumps(status(self.client_address[0])).encode(), "application/json"
         elif self.path in ("/", "/index.html"):
             body, kind = render(), "text/html; charset=utf-8"
+        elif self.path == "/manifest.json":
+            body, kind = manifest(), "application/manifest+json"
+        elif self.path.lstrip("/") in ICONS and ICONS[self.path.lstrip("/")].exists():
+            body, kind = ICONS[self.path.lstrip("/")].read_bytes(), "image/png"
         else:
             self.send_error(404)
             return
