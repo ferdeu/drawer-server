@@ -1076,6 +1076,7 @@ class FridgeTest(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 urllib.request.urlopen(req, timeout=10)
             self.assertEqual(caught.exception.code, 403)
+            caught.exception.close()
 
     def test_old_page_unchanged(self):
         self.assertEqual(self.fetch("/")[0], 200)
