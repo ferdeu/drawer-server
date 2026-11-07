@@ -1069,6 +1069,23 @@ class FridgeTest(unittest.TestCase):
         (panel.CONFIG / "fridge").write_text("dim=late\nback_s=300\n")
         self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"], {"dim": "00:00-07:00", "back_s": 300})
 
+    def test_api_survives_a_broken_part(self):
+        class Broken:
+            def snapshot(self):
+                raise TypeError("odd event")
+
+            def now_playing(self):
+                raise OSError("no internet")
+
+        panel.AGENDA, panel.SPOTIFY = Broken(), FakeSpotify()
+        data = json.loads(self.fetch("/api/fridge")[1])
+        self.assertEqual(data["agenda"], {"calendars": [], "events": [], "stale": True})
+        self.assertEqual(data["playing"]["song"], "Canción")
+        panel.AGENDA, panel.SPOTIFY = FakeAgenda(), Broken()
+        data = json.loads(self.fetch("/api/fridge")[1])
+        self.assertIsNone(data["playing"])
+        self.assertEqual(data["agenda"], FakeAgenda().snapshot())
+
     def test_api_only_for_its_own_page(self):
         panel.AGENDA = FakeAgenda()
         for headers in ({"Host": "evil.example:8080"}, {"Origin": "http://evil.example"}):

@@ -70,6 +70,9 @@ fi
 
 [[ "${FRIDGE_DIM:-}" =~ ^([0-9]{2}:[0-9]{2}-[0-9]{2}:[0-9]{2})?$ ]] || die "FRIDGE_DIM should be two hours like 00:00-07:00"
 [[ "${FRIDGE_BACK_S:-}" =~ ^[0-9]*$ ]] || die "FRIDGE_BACK_S should be a number of seconds, 30 to 3600"
+# without quotes, the | in a calendar line is read as a pipe and the line (and the next one) silently vanish
+UNQUOTED="$(grep -oE '^FRIDGE_CAL_[0-9]+=[^"'\''[:space:]]' "$REPO_ROOT/.env" 2>/dev/null | cut -d= -f1 | tr '\n' ' ' || true)"
+[ -z "$UNQUOTED" ] || die "Put the whole line in double quotes in .env: $UNQUOTED(like FRIDGE_CAL_1=\"Home|#5ee1ff|https://…\")"
 # the calendar addresses are secrets: a bad one is named, never printed
 CAL_LINE='^[^|]+\|#[0-9a-fA-F]{6}\|https://[^ |]+$'
 CAL_LINES=""

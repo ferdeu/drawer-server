@@ -2030,9 +2030,18 @@ def fridge_settings():
 
 
 def fridge_data():
-    return {"agenda": AGENDA.snapshot() if AGENDA else NO_AGENDA,
-            "playing": SPOTIFY.now_playing() if SPOTIFY else None,
-            "settings": fridge_settings()}
+    """Each part on its own: a broken one must not take the clock's page data down with it."""
+    try:
+        agenda = AGENDA.snapshot() if AGENDA else NO_AGENDA
+    except Exception as e:
+        print(f"fridge: calendars failed ({type(e).__name__})", file=sys.stderr)
+        agenda = dict(NO_AGENDA, stale=True)
+    try:
+        playing = SPOTIFY.now_playing() if SPOTIFY else None
+    except Exception as e:
+        print(f"fridge: Spotify failed ({type(e).__name__})", file=sys.stderr)
+        playing = None
+    return {"agenda": agenda, "playing": playing, "settings": fridge_settings()}
 
 
 def render():

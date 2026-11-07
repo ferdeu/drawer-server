@@ -7,7 +7,7 @@ TEXT = {
     "en": {
         "title": "Home", "names": {"casa": "Home", "calendario": "Calendar", "camaras": "Cameras", "estado": "Status"},
         "left_today": "What's left today", "now": "NOW", "until": "until {t}", "until_short": "until {t}",
-        "all_day": "all day", "nothing": "Nothing else today", "stale": "no connection to the calendar",
+        "all_day": "all day", "nothing": "Nothing else today", "stale": "no connection to the calendar", "offline": "no connection to the server",
         "more": "+{n} more", "today": "Today", "week": "This week", "playing": "Playing on Spotify", "on_device": "on {d}",
         "live": "LIVE", "home_only": "Home only",
         "k_internet": "Internet", "k_home": "At home", "k_printer": "Printer", "k_server": "Server", "k_disk": "Storage",
@@ -24,7 +24,7 @@ TEXT = {
     "es": {
         "title": "Casa", "names": {"casa": "Casa", "calendario": "Calendario", "camaras": "Cámaras", "estado": "Estado"},
         "left_today": "Lo que queda de hoy", "now": "AHORA", "until": "hasta las {t}", "until_short": "hasta {t}",
-        "all_day": "todo el día", "nothing": "Nada más por hoy", "stale": "sin conexión con el calendario",
+        "all_day": "todo el día", "nothing": "Nada más por hoy", "stale": "sin conexión con el calendario", "offline": "sin conexión con el server",
         "more": "+{n} más", "today": "Hoy", "week": "Esta semana", "playing": "Sonando en Spotify", "on_device": "en {d}",
         "live": "VIVO", "home_only": "Solo en casa",
         "k_internet": "Internet", "k_home": "En casa", "k_printer": "Impresora", "k_server": "Server", "k_disk": "Disco",
@@ -98,6 +98,9 @@ FRIDGE_PAGE = r"""<!doctype html>
   #casa.empty .right { display:none; }
   #casa.empty .left { text-align:center; }
   #casa.empty .time { font-size:220px; }
+  #casa .left .stale { text-align:center; margin-top:12px; }
+  #casa:not(.empty) .left .stale { display:none; }  /* with events, the line sits under the list */
+  .offline { position:absolute; top:8px; left:0; right:0; text-align:center; color:#ff6b6b; font-size:13px; letter-spacing:2px; }
   #casa .nothing { color:var(--muted); margin-top:26px; font-size:18px; letter-spacing:2px; text-align:center; }
   .play { display:flex; gap:20px; align-items:center; border:1px solid var(--edge); border-radius:18px; padding:14px 18px;
           margin-top:12px; background:linear-gradient(90deg, #0e1a2a, #0a0f18); }
@@ -168,7 +171,8 @@ FRIDGE_PAGE = r"""<!doctype html>
   <section class="screen" id="casa">
     <div class="top">
       <div class="left"><div class="time" id="bigclock"></div><div class="date" id="date"></div>
-        <div class="nothing" id="nothing" hidden></div></div>
+        <div class="nothing" id="nothing" hidden></div>
+        <div class="quiet stale" hidden></div></div>
       <div class="right"><div class="label" id="left-today"></div><div id="today"></div>
         <div class="quiet stale" hidden></div></div>
     </div>
@@ -188,6 +192,7 @@ FRIDGE_PAGE = r"""<!doctype html>
     <div id="tiles"></div>
   </section>
 </main>
+<div class="offline" id="offline" hidden></div>
 <nav class="dots" id="dots"></nav>
 </div>
 <script>
@@ -375,15 +380,24 @@ setInterval(() => {
   const now = new Date();
   const minute = dkey(now) + hm(now);
   if (minute !== lastMinute) { lastMinute = minute; drawAll(now); }  // also moves the week on at midnight
+  // no answer from the server for 2 minutes: say so, and don't pretend a song is still playing
+  const off = Date.now() - gotAt > 120000;
+  $('#offline').hidden = !off;
+  if (off && data.playing) { data.playing = null; drawPlaying(); }
   drawProgress();
 }, 1000);
 
+$('#offline').textContent = T.offline;
+async function get(url) {  // a hung connection (e.g. after a Wi-Fi change) gives up after 10 s
+  const stop = new AbortController(), timer = setTimeout(() => stop.abort(), 10000);
+  try { return await fetch(url, {cache: 'no-store', signal: stop.signal}); } finally { clearTimeout(timer); }
+}
 let asking = false;
 async function poll() {
   if (asking) return;
   asking = true;
   try {
-    const r = await fetch('/api/fridge', {cache: 'no-store'});
+    const r = await get('/api/fridge');
     if (r.ok) {
       data = await r.json();
       gotAt = Date.now();
@@ -406,7 +420,7 @@ async function refreshStatus() {
   if (asked) return;
   asked = true;
   try {
-    const r = await fetch('/api/status', {cache: 'no-store'});
+    const r = await get('/api/status');
     if (r.ok) { lastStatus = await r.json(); gotStatus(); }
   } catch (e) {
     // keep the last one

@@ -1,8 +1,11 @@
 """Tests for the fridge view's calendars (agenda.py). Run on the phone: bash tests/run-on-phone.sh"""
+import importlib.util
+import io
 import json
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -12,6 +15,8 @@ import agenda  # noqa: E402
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 START = datetime(2026, 11, 7, tzinfo=TZ)
+# step 8 installs it only when calendars are set up
+needs_ical = unittest.skipUnless(importlib.util.find_spec("recurring_ical_events"), "recurring-ical-events not installed")
 
 
 def ics(*events):
@@ -30,9 +35,10 @@ def event(summary, dtstart, dtend, *extra):
 GOOD = ics(event("Dentista", "DTSTART:20261107T163000Z", "DTEND:20261107T173000Z", "LOCATION:Av. Siempre Viva 742\\nPiso 2"))
 
 
+@needs_ical
 class AgendaParseTest(unittest.TestCase):
     def test_clean_title(self):
-        self.assertEqual(agenda.clean_title("🎂 [Nicolas] ❓ Cumple Enzo"), ("Cumple Enzo", True))
+        self.assertEqual(agenda.clean_title("🎂 [Juan] ❓ Cumple Pedro"), ("Cumple Pedro", True))
         self.assertEqual(agenda.clean_title("Dentista"), ("Dentista", False))
         self.assertEqual(agenda.clean_title("⚠️ Acto"), ("Acto", True))
 
@@ -80,13 +86,18 @@ class AgendaParseTest(unittest.TestCase):
         self.assertEqual([e["title"] for e in agenda.parse_calendars([text], START)], ["Cruza"])
 
     def test_duplicates_merge(self):
-        same = ics(event("🎂 [Sofia] Acto", "DTSTART:20261110T120000Z", "DTEND:20261110T130000Z"))
-        other = ics(event("[Lucia] Acto", "DTSTART:20261110T120000Z", "DTEND:20261110T130000Z"))
+        same = ics(event("🎂 [Ana] Acto", "DTSTART:20261110T120000Z", "DTEND:20261110T130000Z"))
+        other = ics(event("[Bea] Acto", "DTSTART:20261110T120000Z", "DTEND:20261110T130000Z"))
         later = ics(event("Acto", "DTSTART:20261110T140000Z", "DTEND:20261110T150000Z"))
         events = agenda.parse_calendars([GOOD, same, other], START)
         self.assertEqual([e["cals"] for e in events if e["title"] == "Acto"], [[1, 2]])
         events = agenda.parse_calendars([same, later], START)
         self.assertEqual(len(events), 2)
+
+    def test_bad_event_skipped(self):
+        text = ics("SUMMARY:Raro\nDTEND:20261108T130000Z",  # no start: must not take the whole calendar down
+                   event("Bien", "DTSTART:20261109T120000Z", "DTEND:20261109T130000Z"))
+        self.assertIn("Bien", [e["title"] for e in agenda.parse_calendars([text], START)])
 
     def test_bad_calendar_skipped(self):
         events = agenda.parse_calendars([GOOD, None, "garbage"], START)
@@ -107,6 +118,7 @@ class AgendaParseTest(unittest.TestCase):
         self.assertEqual(len(agenda.parse_calendar_list(many)), 12)
 
 
+@needs_ical
 class AgendaReaderTest(unittest.TestCase):
     URL0, URL1 = "https://example.com/0.ics", "https://example.com/1.ics"
 
@@ -168,6 +180,34 @@ class AgendaReaderTest(unittest.TestCase):
         self.config.unlink()
         self.agenda.refresh()
         self.assertEqual(self.agenda.snapshot(), {"calendars": [], "events": [], "stale": False})
+
+    def test_parse_error_is_stale_not_a_crash(self):
+        self.agenda.refresh()
+        with unittest.mock.patch.object(agenda, "parse_calendars", side_effect=ImportError("no module")):
+            self.agenda.refresh()  # drops the cache
+            self.assertEqual(self.agenda.snapshot()["events"], [])
+            self.assertTrue(self.agenda.snapshot()["stale"])
+
+    def test_retries_sooner_until_first_copy(self):
+        self.answers[self.URL0] = TimeoutError()
+        self.agenda.refresh()
+        self.assertEqual(self.agenda.wait(600), 60)
+        self.answers[self.URL0] = GOOD
+        self.agenda.refresh()
+        self.assertEqual(self.agenda.wait(600), 600)
+
+
+class FetchTest(unittest.TestCase):
+    def answer(self, size):
+        return unittest.mock.patch.object(agenda.urllib.request, "urlopen", return_value=io.BytesIO(b"x" * size))
+
+    def test_big_calendar_is_read(self):  # an old calendar keeps every past event
+        with self.answer(5_000_000):
+            self.assertEqual(len(agenda._fetch("https://example.com/a.ics")), 5_000_000)
+
+    def test_too_big(self):
+        with self.answer(agenda.MAX_BYTES + 1), self.assertRaises(agenda.TooBig):
+            agenda._fetch("https://example.com/a.ics")
 
 
 if __name__ == "__main__":

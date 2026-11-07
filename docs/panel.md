@@ -151,7 +151,7 @@ and between midnight and 7 the page dims itself (`FRIDGE_DIM=00:00-07:00`).
 **Calendars.** Each Google calendar has a *secret address in iCal format* (Google Calendar on a
 computer → the calendar's ⋮ → **Settings and sharing**). Only its owner, or someone who can manage
 it, sees that address, so each person copies their own. Put one line per calendar in `.env`, with
-a name and a color, and run step 8:
+a name and a color, always inside double quotes, and run step 8:
 
 ```bash
 FRIDGE_CAL_1="Home|#5ee1ff|https://calendar.google.com/calendar/ical/…/basic.ics"

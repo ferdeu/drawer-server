@@ -12,8 +12,14 @@ load_phone_env
 HOST="${PHONE_LAN_IP:?run scripts/04-network.sh first}"
 [ -n "${SPOTIFY_CLIENT_ID:-}" ] && [ -n "${SPOTIFY_CLIENT_SECRET:-}" ] \
   || die "Put SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env (from your app at developer.spotify.com)"
-PY="$(command -v python3 || command -v python || true)"
-[ -n "$PY" ] || die "Python 3 is needed on this computer"
+# the first Python 3 that really runs: on Windows, "python3" can be a Microsoft Store placeholder
+PY=""
+for c in python3 python py; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+    PY="$c"; break
+  fi
+done
+[ -n "$PY" ] || die "Python 3 is needed on this computer (python.org, or: winget install Python.Python.3.12)"
 
 say "Connecting Spotify"
 # .env is exported by lib.sh, so the keys reach Python through the environment, not the command line.

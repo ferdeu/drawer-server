@@ -10,14 +10,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 MAX_CALENDARS = 12
-MAX_BYTES = 2_000_000
+MAX_BYTES = 20_000_000  # Google sends every past event too: an old calendar can be a few MB
+RETRY_S = 60  # a calendar never read yet (just booted, Wi-Fi not up) is asked again this soon
 STALE = timedelta(minutes=30)  # no fresh copy for this long: the page says so
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 _UNSURE = re.compile(r"^(?:(?:❓|⚠️?)\s*)+")
 
 
 def clean_title(summary):
-    """The school agent's title rule: drop a leading emoji, a "[Name]" and ❓/⚠️ marks.
+    """Titles written by tools that tag events: drop a leading emoji, a "[Name]" tag and ❓/⚠️ marks.
     Gives (title, unsure); unsure when ❓ or ⚠ came before the title."""
     s = summary or ""
     t = re.sub(r"^[^\w\s\[\(]+\s*", "", s)
@@ -59,6 +60,25 @@ def _fmt(value):
     return value.strftime("%Y-%m-%dT%H:%M") if isinstance(value, datetime) else value.isoformat()
 
 
+def _event(comp, i, tz, start, stop, first_day, stop_day):
+    """One occurrence as the page's event dict, or None when cancelled or outside the window."""
+    if str(comp.get("STATUS", "")).upper() == "CANCELLED":
+        return None
+    raw = comp.get("DTSTART").dt
+    begin, end = _local(raw, tz), _local(_end(comp, raw), tz)
+    all_day = not isinstance(begin, datetime)
+    if all_day:
+        end = end.date() if isinstance(end, datetime) else end
+        if not (begin < stop_day and end > first_day):
+            return None
+    elif not (begin < stop and end > start):
+        return None
+    title, unsure = clean_title(str(comp.get("SUMMARY", "")))
+    where = str(comp.get("LOCATION", "")).strip().splitlines()
+    return {"title": title, "where": where[0][:80] if where else "", "start": _fmt(begin), "end": _fmt(end),
+            "all_day": all_day, "cals": [i], "unsure": unsure}
+
+
 def parse_calendars(texts, start, days=7):
     """Events of all calendars overlapping [start, start + days), local times, duplicates merged.
     texts[i] is calendar i's ICS text, or None; one that can't be read is skipped."""
@@ -72,26 +92,22 @@ def parse_calendars(texts, start, days=7):
         if not text:
             continue
         try:
-            found = recurring_ical_events.of(icalendar.Calendar.from_ical(text)).between(start, stop)
+            cal = icalendar.Calendar.from_ical(text)
+            # an event with no start, or a broken repeating one, is skipped, not the whole calendar
+            cal.subcomponents = [c for c in cal.subcomponents if c.name != "VEVENT" or "DTSTART" in c]
+            found = recurring_ical_events.of(cal, skip_bad_series=True).between(start, stop)
         except Exception as e:  # a broken calendar must not hide the others
             print(f"agenda: calendar {i + 1} could not be read ({type(e).__name__})", file=sys.stderr)
             continue
         for comp in found:
-            if str(comp.get("STATUS", "")).upper() == "CANCELLED":
+            try:
+                ev = _event(comp, i, tz, start, stop, first_day, stop_day)
+            except Exception as e:  # an odd event is left out, not its calendar
+                print(f"agenda: an event in calendar {i + 1} was skipped ({type(e).__name__})", file=sys.stderr)
                 continue
-            raw = comp.get("DTSTART").dt
-            begin, end = _local(raw, tz), _local(_end(comp, raw), tz)
-            all_day = not isinstance(begin, datetime)
-            if all_day:
-                end = end.date() if isinstance(end, datetime) else end
-                if not (begin < stop_day and end > first_day):
-                    continue
-            elif not (begin < stop and end > start):
+            if not ev:
                 continue
-            title, unsure = clean_title(str(comp.get("SUMMARY", "")))
-            where = str(comp.get("LOCATION", "")).strip().splitlines()
-            ev = {"title": title, "where": where[0][:80] if where else "", "start": _fmt(begin), "end": _fmt(end),
-                  "all_day": all_day, "cals": [i], "unsure": unsure}
+            title, unsure = ev["title"], ev["unsure"]
             key = (title.casefold(), ev["start"], ev["end"])
             if key in merged:
                 old = merged[key]
@@ -104,11 +120,15 @@ def parse_calendars(texts, start, days=7):
     return sorted(merged.values(), key=lambda e: (e["start"], e["title"]))
 
 
+class TooBig(ValueError):
+    pass
+
+
 def _fetch(url):
     with urllib.request.urlopen(url, timeout=20) as r:
         data = r.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
-        raise ValueError("calendar too big")
+        raise TooBig()
     return data.decode("utf-8", errors="replace")
 
 
@@ -139,7 +159,8 @@ class Agenda:
                 _readable(text)
                 got[cal["url"]] = text
             except Exception as e:  # keep the last good copy; never print the URL
-                print(f"agenda: calendar {n} not fetched ({type(e).__name__})", file=sys.stderr)
+                why = f"bigger than {MAX_BYTES // 1_000_000} MB" if isinstance(e, TooBig) else type(e).__name__
+                print(f"agenda: calendar {n} not fetched ({why})", file=sys.stderr)
         urls = {c["url"] for c in cals}
         with self.lock:
             self.cals = cals
@@ -154,17 +175,27 @@ class Agenda:
                     self.refresh()
                 except Exception as e:
                     print(f"agenda: {type(e).__name__}", file=sys.stderr)
-                time.sleep(every_s)
+                time.sleep(self.wait(every_s))
         threading.Thread(target=loop, daemon=True).start()
+
+    def wait(self, every_s):
+        """Seconds until the next refresh: sooner while a calendar has never been read."""
+        with self.lock:
+            return RETRY_S if any(c["url"] not in self.ok for c in self.cals) else every_s
 
     def snapshot(self):
         now = self.now()
         day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         with self.lock:
             cals, texts, ok = self.cals, self.texts, self.ok
+            broken = False
             if self.cache is None or self.cache[0] != day:  # parse again only after a refresh or at midnight
-                self.cache = (day, parse_calendars([texts.get(c["url"]) for c in cals], day) if cals else [])
-            events = self.cache[1]
-        stale = any(c["url"] not in ok or now - ok[c["url"]] > STALE for c in cals)
+                try:
+                    self.cache = (day, parse_calendars([texts.get(c["url"]) for c in cals], day) if cals else [])
+                except Exception as e:  # e.g. the iCal package gone after a Python upgrade: say so, don't crash
+                    print(f"agenda: could not read the calendars ({type(e).__name__})", file=sys.stderr)
+                    broken = True
+            events = [] if broken else self.cache[1]
+        stale = broken or any(c["url"] not in ok or now - ok[c["url"]] > STALE for c in cals)
         return {"calendars": [{"name": c["name"], "color": c["color"]} for c in cals], "events": events,
                 "stale": stale}

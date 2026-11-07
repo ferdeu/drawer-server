@@ -139,7 +139,9 @@ old_ssh 'tar -C ~/.termux/boot.moved -cf - .' |
 say "Installing what the copied services need on the new phone"
 new_ssh '[ -f ~/.termux/boot/50-syncthing.sh ] && ! command -v syncthing >/dev/null && pkg install -y syncthing jq >/dev/null 2>&1
   [ -f ~/.config/drawer-server/plug ] && ! python -c "import tinytuya" 2>/dev/null &&
-    { pkg install -y python-cryptography >/dev/null 2>&1 && pip install -q tinytuya; }; true'
+    { pkg install -y python-cryptography >/dev/null 2>&1 && pip install -q tinytuya; }
+  [ -f ~/.config/drawer-server/calendars ] && ! python -c "import recurring_ical_events" 2>/dev/null &&
+    pip install -q recurring-ical-events; true'
 
 say "Starting everything on the new phone"
 new_ssh 'for f in ~/.termux/boot/*; do sh "$f" >/dev/null 2>&1; done; sleep 5;
