@@ -129,6 +129,52 @@ folded or open (sections, each Details, each person, each group of devices) is r
 On a computer or tablet the page uses more width: the internet numbers sit in one row, who's home and
 photo backup side by side, and the server's cards in one row (three per row on mid-size screens).
 
+## Fridge tablet
+
+A second page for a tablet that stays on all day, lying sideways (tested size: an 11" tablet,
+2000×1200). Open `http://<server-ip>:8080/fridge` (step 8 prints it). Use the number, not a name:
+the page's data is only given to an address typed as an IP. It has four screens; swipe sideways
+or tap the dots at the bottom:
+
+- **Home**: a big clock and date, what's left of today in your calendars (an event in progress says
+  **NOW**), and at the bottom what's playing on Spotify, only while something plays.
+- **Calendar**: today and the next six days.
+- **Cameras** (step 11): one camera big and live, the others as stills; tap a small one to make it
+  the big one. Home only, like in the panel.
+- **Status**: internet, who's home, ink, the server, storage and the devices on the Wi-Fi, from
+  the same data as the panel.
+
+After 2 minutes without a touch it goes back to Home (`FRIDGE_BACK_S`). To be kind to a screen
+that never turns off, the background is black, everything moves a few pixels every few minutes,
+and between midnight and 7 the page dims itself (`FRIDGE_DIM=00:00-07:00`).
+
+**Calendars.** Each Google calendar has a *secret address in iCal format* (Google Calendar on a
+computer → the calendar's ⋮ → **Settings and sharing**). Only its owner, or someone who can manage
+it, sees that address, so each person copies their own. Put one line per calendar in `.env`, with
+a name and a color, and run step 8:
+
+```bash
+FRIDGE_CAL_1="Home|#5ee1ff|https://calendar.google.com/calendar/ical/…/basic.ics"
+FRIDGE_CAL_2="Kid one|#4285f4|https://calendar.google.com/calendar/ical/…/basic.ics"
+```
+
+The server reads them every 10 minutes. If the internet is down it keeps showing the last copy,
+with a small "no connection to the calendar" line. The addresses are secrets: anyone with one can
+read that calendar, so they stay in `.env` and on the server, never on the page.
+
+**What's playing.** Spotify only (YouTube Music has no way to ask). A Spotify **Premium** account
+makes a free app at [developer.spotify.com](https://developer.spotify.com/dashboard): any name,
+redirect URI `http://127.0.0.1:8888/callback`, "Web API". Put its Client ID and Client secret in
+`.env` as `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`, then run `bash scripts/spotify-login.sh`
+on your computer and accept in the browser that opens, with the account whose music you want to
+see. It shows what that account plays on any device.
+
+**Keeping the screen on.** A web page can't do it over plain `http` (the browser only allows it on
+`https`), so install **Fully Kiosk Browser** from the Play Store and set: *Start URL* to the
+address above, *Keep Screen On*, and *Start on Boot*. Nothing needs developer options or a cable.
+If the tablet has a battery-protection mode (Lenovo's stops charging around 60–80%), turn it on,
+since it will be plugged in for good; otherwise a second smart plug can keep it between 30 and 80%.
+
 ## Tips
 
 - **Grouping:** cameras are recognized by brand (Ezviz/Hikvision) or by a name containing *cam*,

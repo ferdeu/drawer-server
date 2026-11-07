@@ -39,6 +39,12 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #                                           other pages: the home address, then the Tailscale one
 #   PANEL_ADDABLE=no                        hide the "Can be added: …" line at the bottom
 #   DISK_RECORDINGS_GB, DISK_BACKUP_GB, DISK_KEEP_FREE_GB, DISK_BACKUP_PAUSE   disk split (see .env.example)
+# The fridge tablet page (http://<phone-ip>:8080/fridge):
+#   FRIDGE_CAL_1="Home|#5ee1ff|https://calendar.google.com/calendar/ical/.../basic.ics"   up to
+#                                           FRIDGE_CAL_12: name, color and the calendar's secret iCal address
+#   FRIDGE_DIM=00:00-07:00                  the page dims itself between these hours
+#   FRIDGE_BACK_S=120                       back to the first screen after this many seconds untouched
+#   (Spotify's "now playing": bash scripts/spotify-login.sh, once)
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
 
 [[ "${PANEL_PRINTER_IP:-}" =~ ^([0-9.]+)?$ ]] || die "PANEL_PRINTER_IP should be an address like 192.168.1.40"
@@ -62,8 +68,26 @@ if [ -n "$TAB_LINES" ] && { grep -qvE "^[^=]+= *(self|$url( *\| *$url)?)$" <<<"$
   die "PANEL_TABS: Label=self for this panel, and Label=home-address|away-address for each other page, comma separated"
 fi
 
+[[ "${FRIDGE_DIM:-}" =~ ^([0-9]{2}:[0-9]{2}-[0-9]{2}:[0-9]{2})?$ ]] || die "FRIDGE_DIM should be two hours like 00:00-07:00"
+[[ "${FRIDGE_BACK_S:-}" =~ ^[0-9]*$ ]] || die "FRIDGE_BACK_S should be a number of seconds, 30 to 3600"
+# the calendar addresses are secrets: a bad one is named, never printed
+CAL_LINE='^[^|]+\|#[0-9a-fA-F]{6}\|https://[^ |]+$'
+CAL_LINES=""
+for n in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  v="FRIDGE_CAL_$n"
+  [ -n "${!v:-}" ] || continue
+  [[ "${!v}" =~ $CAL_LINE ]] || die "$v should be Name|#rrggbb|https://… (the calendar's secret iCal address)"
+  CAL_LINES+="${!v}"$'\n'
+done
+
 # the router password, names and title go over stdin, never inside a command line
-phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names ~/.config/drawer-server/device-hide ~/.config/drawer-server/title ~/.config/drawer-server/people ~/.config/drawer-server/tabs'
+phone_ssh "$HOST" 'mkdir -p ~/.config/drawer-server; rm -f ~/.config/drawer-server/router ~/.config/drawer-server/device-names ~/.config/drawer-server/device-hide ~/.config/drawer-server/title ~/.config/drawer-server/people ~/.config/drawer-server/tabs ~/.config/drawer-server/calendars'
+if [ -n "$CAL_LINES" ]; then
+  printf '%s' "$CAL_LINES" | phone_ssh "$HOST" 'umask 077; cat > ~/.config/drawer-server/calendars'
+  phone_ssh "$HOST" "python -c 'import recurring_ical_events' 2>/dev/null || pip install -q recurring-ical-events"
+fi
+# the fridge page re-reads these on every poll
+printf 'dim=%s\nback_s=%s\n' "${FRIDGE_DIM:-}" "${FRIDGE_BACK_S:-}" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/fridge'
 if [ -n "${PANEL_TITLE:-}" ]; then
   printf '%s\n' "$PANEL_TITLE" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/title'
 fi
@@ -137,3 +161,4 @@ curl -sf http://127.0.0.1:$PANEL_PORT/api/status >/dev/null || { cat ~/panel/pan
 say "Panel ready"
 echo "  At home:        http://$HOST:$PANEL_PORT"
 [ -n "${PHONE_TS_IP:-}" ] && echo "  From anywhere:  http://$PHONE_TS_IP:$PANEL_PORT  (with Tailscale on your device)"
+echo "  Fridge tablet:  http://$HOST:$PANEL_PORT/fridge"
