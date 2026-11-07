@@ -9,12 +9,35 @@ TEXT = {
         "left_today": "What's left today", "now": "NOW", "until": "until {t}", "until_short": "until {t}",
         "all_day": "all day", "nothing": "Nothing else today", "stale": "no connection to the calendar",
         "more": "+{n} more", "today": "Today", "week": "This week", "playing": "Playing on Spotify", "on_device": "on {d}",
+        "live": "LIVE", "home_only": "Home only",
+        "k_internet": "Internet", "k_home": "At home", "k_printer": "Printer", "k_server": "Server", "k_disk": "Storage",
+        "k_devices": "Devices · {on} of {n} connected", "last_test": "Last test {t}", "alerts": "with alerts",
+        "wifi": "Wi-Fi {s}", "cpu": "processor {n}%", "plug_on": "plug on ({lo}–{hi}%)", "plug_off": "plug off ({lo}–{hi}%)",
+        "plug_error": "smart plug not answering", "down": "{s} down", "no_battery": "battery not read",
+        "free": "GB free", "photos": "photos {gb} GB", "up_to_date": "up to date ✓", "to_go": "{gb} GB to go",
+        "backup_near": "photo backup near its limit", "backup_paused": "photo backup paused",
+        "ink": {"black": "black", "cyan": "cyan", "magenta": "magenta", "yellow": "yellow",
+                "light cyan": "light cyan", "light magenta": "light magenta"},
+        "svc": {"SSH": "Remote access", "NextDNS": "Ad blocking", "Luanti": "Kids' game", "Syncthing": "Photo backup",
+                "Cameras": "Cameras", "Recorder": "Recorder"},
     },
     "es": {
         "title": "Casa", "names": {"casa": "Casa", "calendario": "Calendario", "camaras": "Cámaras", "estado": "Estado"},
         "left_today": "Lo que queda de hoy", "now": "AHORA", "until": "hasta las {t}", "until_short": "hasta {t}",
         "all_day": "todo el día", "nothing": "Nada más por hoy", "stale": "sin conexión con el calendario",
         "more": "+{n} más", "today": "Hoy", "week": "Esta semana", "playing": "Sonando en Spotify", "on_device": "en {d}",
+        "live": "VIVO", "home_only": "Solo en casa",
+        "k_internet": "Internet", "k_home": "En casa", "k_printer": "Impresora", "k_server": "Server", "k_disk": "Disco",
+        "k_devices": "Dispositivos · {on} de {n} conectados", "last_test": "Último test {t}", "alerts": "con alertas",
+        "wifi": "Wi-Fi {s}", "cpu": "procesador {n}%", "plug_on": "enchufe prendido ({lo}–{hi}%)",
+        "plug_off": "enchufe apagado ({lo}–{hi}%)", "plug_error": "el enchufe no contesta", "down": "{s} caído",
+        "no_battery": "no leo la batería", "free": "GB libres", "photos": "fotos {gb} GB", "up_to_date": "al día ✓",
+        "to_go": "faltan {gb} GB", "backup_near": "backup de fotos cerca del límite",
+        "backup_paused": "backup de fotos en pausa",
+        "ink": {"black": "negro", "cyan": "cian", "magenta": "magenta", "yellow": "amarillo",
+                "light cyan": "cian claro", "light magenta": "magenta claro"},
+        "svc": {"SSH": "Acceso remoto", "NextDNS": "Bloqueo de publicidad", "Luanti": "Juego de los chicos",
+                "Syncthing": "Backup de fotos", "Cameras": "Cámaras", "Recorder": "Grabador"},
     },
 }
 
@@ -103,6 +126,40 @@ FRIDGE_PAGE = r"""<!doctype html>
   .it.all b { color:var(--all); }
   .it.past { opacity:.35; }
   .none { color:#3a4658; font-size:13px; }
+
+  /* Cámaras: one big and live, the others as stills */
+  .cams { flex:1; display:grid; grid-template-columns:2fr 1fr; gap:12px; min-height:0; }
+  .cams.one { grid-template-columns:1fr; }
+  .cam { position:relative; border-radius:14px; overflow:hidden; border:1px solid var(--edge); background:#000; min-height:0; }
+  .cam:not(.big) { cursor:pointer; }
+  .cam img, .cam cam-live, .cam video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  .cam.big { grid-row:1 / -1; border-color:#5ee1ff66; box-shadow:0 0 18px #5ee1ff22; }
+  .cam .live { position:absolute; right:10px; top:8px; font-size:11px; letter-spacing:2px; color:var(--now);
+               background:#000a; padding:3px 8px; border-radius:8px; z-index:1; }
+  .away { flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:22px; letter-spacing:3px; }
+
+  /* Estado: tiles from /api/status */
+  #tiles { flex:1; display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:1fr 1fr; grid-auto-flow:dense;
+           gap:12px; min-height:0; }
+  .tile { border:1px solid var(--edge); border-radius:14px; padding:12px 14px; background:#0a111c88; overflow:hidden;
+          display:flex; flex-direction:column; min-height:0; }
+  .tile.wide { grid-column:span 2; }
+  .tile .k { color:var(--glow); font-size:11px; letter-spacing:3px; text-transform:uppercase; opacity:.85; }
+  .tile .v { font-size:34px; font-weight:200; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .tile .v small { font-size:16px; color:var(--muted); }
+  .tile .s { color:var(--muted); font-size:13px; margin-top:4px; line-height:1.35; }
+  .ok { color:var(--now); }
+  .warn { color:#ffc857 !important; }
+  .bad { color:#ff6b6b !important; }
+  .pp { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  .pp span { border:1px solid #7cf5b055; color:var(--now); border-radius:20px; padding:4px 12px; font-size:16px; }
+  .pp span.off { border-color:#2a3546; color:#4a586c; }
+  .inks { display:flex; gap:10px; flex:1; min-height:30px; max-height:70px; align-items:flex-end; margin-top:10px; }
+  .inks i { flex:1; border-radius:4px; background:var(--c); opacity:.85; box-shadow:0 0 8px var(--c); }
+  .dv { display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px; margin-top:10px; flex:1; min-height:0; overflow:hidden; }
+  .dv span { border:1px solid #7cf5b044; color:#bff5d6; border-radius:16px; padding:3px 10px; font-size:13px; white-space:nowrap; }
+  .dv span.off { border-color:#222c3a; color:#4a586c; }
+  .dv span.bad { border-color:#ff6b6b55; }
 </style>
 </head>
 <body>
@@ -124,9 +181,11 @@ FRIDGE_PAGE = r"""<!doctype html>
   </section>
   <section class="screen" id="camaras">
     <div class="head"><div class="label" data-name="camaras"></div><div class="clock"></div></div>
+    <div class="cams" id="cams"></div><div class="away" id="cams-away" hidden></div>
   </section>
   <section class="screen" id="estado">
     <div class="head"><div class="label" data-name="estado"></div><div class="clock"></div></div>
+    <div id="tiles"></div>
   </section>
 </main>
 <nav class="dots" id="dots"></nav>
@@ -340,6 +399,199 @@ async function poll() {
 drawAll(new Date());
 poll();
 setInterval(poll, 15000);
+
+// --- Status (the panel's /api/status): asked at start (are there cameras?), then only while it shows ---
+let lastStatus = null, asked = false;
+async function refreshStatus() {
+  if (asked) return;
+  asked = true;
+  try {
+    const r = await fetch('/api/status', {cache: 'no-store'});
+    if (r.ok) { lastStatus = await r.json(); gotStatus(); }
+  } catch (e) {
+    // keep the last one
+  } finally {
+    asked = false;
+  }
+}
+function gotStatus() {
+  const s = lastStatus, c = s.cameras && (s.cameras.names || []).length ? s.cameras : null;
+  if (!c) dropScreen('camaras');
+  const wasHome = !!(cams && cams.home);
+  cams = c;
+  if (camsOn && c && !!c.home !== wasHome) drawCams();
+  drawStatus(s);
+}
+let statusTimer = null;
+onShow('estado', () => { refreshStatus(); statusTimer = setInterval(refreshStatus, 30000); });
+onHide('estado', () => clearInterval(statusTimer));
+
+// --- Cámaras: the big one live (go2rtc's player, through the panel), the others as stills ---
+let cams = null, big = 1, camsOn = false, stillTimer = null, player = null, Player = null, playToken = 0;
+$('#cams-away').textContent = T.home_only;
+async function loadPlayer() {
+  if (Player) return true;
+  try {
+    const {VideoRTC} = await import('/live/video-rtc.js');
+    Player = class extends VideoRTC {};
+    customElements.define('cam-live', Player);
+    return true;
+  } catch (e) { return false; }
+}
+function clearStills() {  // a wall tablet runs this for days: every picture is freed
+  for (const img of document.querySelectorAll('#cams img')) if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+  $('#cams').innerHTML = '';
+}
+function drawCams() {
+  stopPlayer();
+  clearStills();
+  const home = !!(cams && cams.home);
+  $('#cams-away').hidden = home || !cams;  // not asked yet: neither
+  $('#cams').hidden = !home;
+  if (!home || !camsOn) return;
+  const n = cams.names.length;
+  if (big > n) big = 1;
+  const order = [big, ...[...Array(n)].map((_, i) => i + 1).filter(i => i !== big)];
+  $('#cams').classList.toggle('one', n === 1);
+  $('#cams').style.gridTemplateRows = `repeat(${Math.max(1, n - 1)}, 1fr)`;
+  $('#cams').innerHTML = order.map((c, i) => `<div class="cam${i ? '' : ' big'}" data-n="${c}">` +
+    `<img alt="" data-n="${c}" style="visibility:hidden">${i ? '' : `<div class="live" hidden>● ${esc(T.live)}</div>`}</div>`).join('');
+  for (const t of document.querySelectorAll('#cams .cam:not(.big)')) t.onclick = () => { big = +t.dataset.n; drawCams(); };
+  stills();
+  play(big, true);
+}
+function stills() {
+  if (!camsOn) return;
+  for (const img of document.querySelectorAll('#cams img')) {
+    if (img.dataset.busy || img.closest('.playing')) continue;  // a slow answer must not pile up requests
+    img.dataset.busy = 1;
+    fetch('/api/camera/' + img.dataset.n + '.jpg?t=' + Date.now()).then(async r => {
+      if (r.status !== 200) return;  // 204: no fresh still yet, keep the last one
+      const blob = await r.blob();
+      if (!img.isConnected) return;
+      if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+      img.dataset.url = URL.createObjectURL(blob);
+      img.src = img.dataset.url;
+      img.style.visibility = '';
+    }).catch(() => {}).finally(() => { delete img.dataset.busy; });
+  }
+}
+async function play(n, hd) {
+  stopPlayer();
+  const mine = ++playToken;
+  if (!(await loadPlayer()) || mine !== playToken || !camsOn) return;
+  const tile = $('#cams .big');
+  if (!tile) return;
+  const el = document.createElement('cam-live');
+  Object.assign(el, {mode: 'mse', media: 'video', visibilityCheck: false});
+  tile.append(el);
+  el.video.controls = false;
+  el.video.muted = true;
+  el.video.playsInline = true;
+  el.src = new URL('/live/ws?src=cam' + n + (hd ? '_hd' : ''), location.href).href;
+  player = el;
+  // a weak screen can't decode the big stream: drop to the small one (the still stays meanwhile)
+  const fallback = () => { if (player !== el) return; clearTimeout(el.timer); if (hd) play(n, false); };
+  el.video.addEventListener('playing', () => {
+    if (player !== el) return;
+    clearTimeout(el.timer);
+    tile.classList.add('playing');
+    $('.live', tile).hidden = false;
+  });
+  el.video.addEventListener('error', fallback);
+  el.timer = setTimeout(fallback, hd ? 5000 : 10000);
+}
+function stopPlayer() {
+  playToken++;
+  if (!player) return;
+  clearTimeout(player.timer);
+  player.ondisconnect();
+  const tile = player.closest('.cam');
+  if (tile) { tile.classList.remove('playing'); $('.live', tile).hidden = true; }
+  player.remove();
+  player = null;
+}
+onShow('camaras', () => { camsOn = true; drawCams(); stillTimer = setInterval(stills, 2500); refreshStatus(); });
+onHide('camaras', () => { camsOn = false; clearInterval(stillTimer); stopPlayer(); clearStills(); });
+
+// --- Estado ---
+const num = (x, d = 0) => Number(x).toLocaleString(LANG, {maximumFractionDigits: d});
+const INK = {black: '#ddd', cyan: '#00c8ff', magenta: '#ff3ea5', yellow: '#ffe14d', 'light cyan': '#7fe3ff', 'light magenta': '#ff9fd2'};
+const tile = (key, body, wide) => `<div class="tile${wide ? ' wide' : ''}"><div class="k">${key}</div>${body}</div>`;
+const lines = list => list.length ? `<div class="s">${list.join('<br>')}</div>` : '';
+function drawStatus(s) {
+  const h = s.home || {}, out = [];
+
+  const sl = h.starlink, last = s.speed && s.speed.last;
+  if (sl || last) {
+    const sub = [];
+    let v;
+    if (sl && sl.error) v = '<div class="v bad">–</div>';
+    else if (sl) v = `<div class="v ${(sl.alerts || []).length ? 'warn' : 'ok'}">OK <small>${num(sl.latency_ms)} ms</small></div>`;
+    else v = `<div class="v">${num(last[1])} <small>Mbps</small></div>`;
+    if (sl && (sl.alerts || []).length) sub.push(`<span class="warn">${esc(T.alerts)}</span>`);
+    if (last) sub.push(esc(fmt(T.last_test, {t: hm(new Date(last[0] * 1000))})) + `<br>↓ ${num(last[1])} · ↑ ${num(last[2])} Mbps`);
+    out.push(tile(esc(T.k_internet), v + lines(sub)));
+  }
+
+  const people = h.people || [];
+  if (people.length) {
+    const ssid = (h.devices || {}).ssid;
+    out.push(tile(esc(T.k_home), `<div class="pp">${people.map(p => `<span${p.home ? '' : ' class="off"'}>${esc(p.name)}</span>`).join('')}</div>` +
+      (ssid ? `<div class="s" style="margin-top:12px">${esc(fmt(T.wifi, {s: ssid}))}</div>` : ''), true));
+  }
+
+  const inks = (h.printer || {}).inks || [];
+  if (inks.length) {
+    out.push(tile(esc(T.k_printer), `<div class="inks">${inks.map(k => `<i style="--c:${INK[k.color] || '#888'};height:${Math.max(4, Math.min(100, +k.level || 0))}%"></i>`).join('')}</div>` +
+      `<div class="s">${inks.map(k => `<span${k.level <= 15 ? ' class="warn"' : ''}>${esc((T.ink || {})[k.color] || k.color)} ${num(k.level)}</span>`).join(' · ')} %</div>`));
+  }
+
+  const b = s.battery || {}, cpu = s.system && s.system.cpu_pct, sub = [];
+  const temp = b.temperature != null ? `<span${b.temperature >= 40 ? ' class="bad"' : ''}>${num(b.temperature)} °C</span>` : '';
+  sub.push([temp, cpu != null ? esc(fmt(T.cpu, {n: num(cpu)})) : ''].filter(Boolean).join(' · '));
+  if (s.plug) sub.push(s.plug.error ? `<span class="bad">${esc(T.plug_error)}</span>`
+    : esc(fmt(s.plug.on ? T.plug_on : T.plug_off, {lo: s.plug.low, hi: s.plug.high})));
+  if (s.battery_stale) sub.push(`<span class="bad">${esc(T.no_battery)}</span>`);
+  for (const v of s.services || []) if (!v.ok) sub.push(`<span class="bad">${esc(fmt(T.down, {s: T.svc[v.name] || v.name}))}</span>`);
+  out.push(tile(esc(T.k_server), `<div class="v">${b.percentage != null ? num(b.percentage) + '<small>%</small>' : '–'}</div>` + lines(sub.filter(Boolean))));
+
+  const d = s.disk || {};
+  if (d.free_gb != null) {
+    const dsub = [], photos = (d.kinds || []).find(k => k.kind === 'backup'), folders = (h.backup || {}).folders || [];
+    if (photos) {
+      const need = folders.reduce((t, f) => t + (f.need_gb || 0), 0);
+      const state = !folders.length ? '' : need > 0.05 ? esc(fmt(T.to_go, {gb: num(need, 1)})) : esc(T.up_to_date);
+      dsub.push([esc(fmt(T.photos, {gb: num(photos.gb, 1)})), state].filter(Boolean).join(' · '));
+    }
+    if (d.warn) dsub.push(`<span class="warn">${esc(d.warn === 'paused' ? T.backup_paused : T.backup_near)}</span>`);
+    out.push(tile(esc(T.k_disk), `<div class="v">${num(d.free_gb)} <small>${esc(T.free)}</small></div>` + lines(dsub)));
+  }
+
+  const devs = (h.devices || {}).devices || [];
+  if (devs.length) {
+    const on = devs.filter(x => x.online), off = devs.filter(x => !x.online);
+    const chip = x => `<span class="${x.online ? '' : x.kind === 'camera' ? 'off bad' : 'off'}">${esc(x.name || x.ip || x.mac)}</span>`;
+    out.push(tile(esc(fmt(T.k_devices, {on: on.length, n: devs.length})), `<div class="dv">${on.concat(off).map(chip).join('')}</div>`, true));
+  }
+
+  $('#tiles').innerHTML = out.join('');
+  const dv = $('#tiles .dv');
+  if (dv) fitChips(dv);
+}
+function fitChips(box) {  // the devices that don't fit become "+N"
+  const over = () => box.scrollHeight > box.clientHeight + 1;
+  if (!over()) return;
+  const more = document.createElement('span');
+  more.className = 'off';
+  box.append(more);
+  let hidden = 0;
+  while (over() && box.children.length > 1) {
+    more.previousElementSibling.remove();
+    more.textContent = '+' + ++hidden;
+  }
+}
+refreshStatus();
 </script>
 </body>
 </html>
