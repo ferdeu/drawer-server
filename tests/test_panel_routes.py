@@ -1069,6 +1069,14 @@ class FridgeTest(unittest.TestCase):
         (panel.CONFIG / "fridge").write_text("dim=late\nback_s=300\n")
         self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"], {"dim": "00:00-07:00", "back_s": 300})
 
+    def test_api_only_for_its_own_page(self):
+        panel.AGENDA = FakeAgenda()
+        for headers in ({"Host": "evil.example:8080"}, {"Origin": "http://evil.example"}):
+            req = urllib.request.Request(self.base + "/api/fridge", headers=headers)
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(req, timeout=10)
+            self.assertEqual(caught.exception.code, 403)
+
     def test_old_page_unchanged(self):
         self.assertEqual(self.fetch("/")[0], 200)
         self.assertEqual(sorted(json.loads(self.fetch("/api/status")[1])), self.STATUS_KEYS)

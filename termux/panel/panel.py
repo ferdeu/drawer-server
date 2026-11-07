@@ -2074,6 +2074,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path in ("/", "/index.html"):
             body, kind = render(), "text/html; charset=utf-8"
         elif self.path == "/api/fridge":
+            if not self.same_site():  # the family's events: only for the page itself (no DNS rebinding)
+                self.send_error(403)
+                return
             body, kind = json.dumps(fridge_data()).encode(), "application/json"
         elif self.path.split("?", 1)[0] == "/fridge":
             body, kind = fridge.render(LANG), "text/html; charset=utf-8"
