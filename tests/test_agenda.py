@@ -1,7 +1,9 @@
 """Tests for the fridge view's calendars (agenda.py). Run on the phone: bash tests/run-on-phone.sh"""
+import json
 import sys
+import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -103,6 +105,69 @@ class AgendaParseTest(unittest.TestCase):
         self.assertEqual(cals[1]["url"], "https://example.com/d.ics")
         many = "\n".join(f"C{n}|#000000|https://example.com/{n}.ics" for n in range(20))
         self.assertEqual(len(agenda.parse_calendar_list(many)), 12)
+
+
+class AgendaReaderTest(unittest.TestCase):
+    URL0, URL1 = "https://example.com/0.ics", "https://example.com/1.ics"
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.config = Path(self.dir.name) / "calendars"
+        self.config.write_text(f"Uno|#5ee1ff|{self.URL0}\nDos|#7cf5b0|{self.URL1}\n")
+        self.answers = {self.URL0: GOOD, self.URL1: ics(event("Cumple", "DTSTART;VALUE=DATE:20261114", "DTEND;VALUE=DATE:20261115"))}
+        self.clock = datetime(2026, 11, 7, 10, 0, tzinfo=TZ)
+        self.agenda = agenda.Agenda(self.config, fetch=self.fetch, now=lambda: self.clock)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def fetch(self, url):
+        answer = self.answers[url]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def titles(self):
+        return [e["title"] for e in self.agenda.snapshot()["events"]]
+
+    def test_snapshot_has_no_urls(self):
+        self.agenda.refresh()
+        snap = self.agenda.snapshot()
+        self.assertEqual(snap["calendars"], [{"name": "Uno", "color": "#5ee1ff"}, {"name": "Dos", "color": "#7cf5b0"}])
+        self.assertNotIn("https://", json.dumps(snap))
+
+    def test_failure_keeps_last_good(self):
+        self.agenda.refresh()
+        self.answers[self.URL0] = OSError("down " + self.URL0)
+        self.agenda.refresh()
+        self.assertEqual(self.titles(), ["Dentista"])
+        self.assertFalse(self.agenda.snapshot()["stale"])
+        self.clock += timedelta(minutes=31)
+        self.assertTrue(self.agenda.snapshot()["stale"])
+
+    def test_one_bad_calendar_doesnt_hide_others(self):
+        self.answers[self.URL0] = TimeoutError()
+        self.clock = datetime(2026, 11, 8, 10, 0, tzinfo=TZ)  # so the 14th is inside the week
+        self.agenda.refresh()
+        self.assertEqual(self.titles(), ["Cumple"])
+        self.assertTrue(self.agenda.snapshot()["stale"])
+
+    def test_garbage_doesnt_replace_last_good(self):
+        self.agenda.refresh()
+        self.answers[self.URL0] = "<html>not a calendar</html>"
+        self.agenda.refresh()
+        self.assertIn("Dentista", self.titles())
+
+    def test_midnight_rollover(self):
+        self.agenda.refresh()
+        self.assertEqual(self.titles(), ["Dentista"])
+        self.clock = datetime(2026, 11, 8, 0, 0, 30, tzinfo=TZ)
+        self.assertEqual(self.titles(), ["Cumple"])
+
+    def test_no_config(self):
+        self.config.unlink()
+        self.agenda.refresh()
+        self.assertEqual(self.agenda.snapshot(), {"calendars": [], "events": [], "stale": False})
 
 
 if __name__ == "__main__":

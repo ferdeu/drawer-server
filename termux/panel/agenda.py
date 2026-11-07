@@ -3,9 +3,15 @@ Used by panel.py (deployed side by side). Needs `recurring-ical-events` from pip
 """
 import re
 import sys
+import threading
+import time
+import urllib.request
 from datetime import datetime, timedelta
+from pathlib import Path
 
 MAX_CALENDARS = 12
+MAX_BYTES = 2_000_000
+STALE = timedelta(minutes=30)  # no fresh copy for this long: the page says so
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 _UNSURE = re.compile(r"^(?:(?:❓|⚠️?)\s*)+")
 
@@ -96,3 +102,69 @@ def parse_calendars(texts, start, days=7):
             else:
                 merged[key] = ev
     return sorted(merged.values(), key=lambda e: (e["start"], e["title"]))
+
+
+def _fetch(url):
+    with urllib.request.urlopen(url, timeout=20) as r:
+        data = r.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        raise ValueError("calendar too big")
+    return data.decode("utf-8", errors="replace")
+
+
+def _readable(text):
+    import icalendar
+    return icalendar.Calendar.from_ical(text) is not None
+
+
+class Agenda:
+    """Keeps the last good copy of each calendar listed in config_path and gives the merged week.
+    URLs are secrets: they never leave this object, not even in error lines."""
+
+    def __init__(self, config_path, fetch=_fetch, now=lambda: datetime.now().astimezone()):
+        self.config_path, self.fetch, self.now = Path(config_path), fetch, now
+        self.lock = threading.Lock()
+        self.cals, self.texts, self.ok = [], {}, {}  # texts and ok (last success) are keyed by URL
+        self.cache = None  # (day, events)
+
+    def refresh(self):
+        try:
+            cals = parse_calendar_list(self.config_path.read_text(errors="replace"))
+        except OSError:
+            cals = []
+        got = {}
+        for n, cal in enumerate(cals, 1):
+            try:
+                text = self.fetch(cal["url"])
+                _readable(text)
+                got[cal["url"]] = text
+            except Exception as e:  # keep the last good copy; never print the URL
+                print(f"agenda: calendar {n} not fetched ({type(e).__name__})", file=sys.stderr)
+        urls = {c["url"] for c in cals}
+        with self.lock:
+            self.cals = cals
+            self.texts = {u: t for u, t in self.texts.items() if u in urls} | got
+            self.ok = {u: t for u, t in self.ok.items() if u in urls} | {u: self.now() for u in got}
+            self.cache = None
+
+    def start(self, every_s=600):
+        def loop():
+            while True:
+                try:
+                    self.refresh()
+                except Exception as e:
+                    print(f"agenda: {type(e).__name__}", file=sys.stderr)
+                time.sleep(every_s)
+        threading.Thread(target=loop, daemon=True).start()
+
+    def snapshot(self):
+        now = self.now()
+        day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        with self.lock:
+            cals, texts, ok = self.cals, self.texts, self.ok
+            if self.cache is None or self.cache[0] != day:  # parse again only after a refresh or at midnight
+                self.cache = (day, parse_calendars([texts.get(c["url"]) for c in cals], day) if cals else [])
+            events = self.cache[1]
+        stale = any(c["url"] not in ok or now - ok[c["url"]] > STALE for c in cals)
+        return {"calendars": [{"name": c["name"], "color": c["color"]} for c in cals], "events": events,
+                "stale": stale}
