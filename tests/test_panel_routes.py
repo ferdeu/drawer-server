@@ -1003,5 +1003,76 @@ class BackupKeeperTest(unittest.TestCase):
         self.assertEqual(self.patched[-1], ("a", False))
 
 
+class FakeAgenda:
+    def snapshot(self):
+        return {"calendars": [{"name": "Casa", "color": "#5ee1ff"}], "events": [], "stale": False}
+
+
+class FakeSpotify:
+    def now_playing(self):
+        return {"song": "Canción", "artist": "A", "album": "B", "cover": "", "progress_ms": 0, "duration_ms": 1,
+                "device": "Parlante"}
+
+
+class FridgeTest(unittest.TestCase):
+    STATUS_KEYS = ['addable', 'at_home', 'battery', 'battery_stale', 'cameras', 'disk', 'history', 'home', 'memory',
+                   'plug', 'plug_ip', 'recorder', 'recordings', 'self_ip', 'services', 'speed', 'system', 'time',
+                   'uptime_h']  # what /api/status answered before the fridge view
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), panel.Handler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.server.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        self.saved = panel.CONFIG, panel.LANG, panel.AGENDA, panel.SPOTIFY
+        self.tmp = tempfile.TemporaryDirectory()
+        panel.CONFIG = Path(self.tmp.name)
+
+    def tearDown(self):
+        panel.CONFIG, panel.LANG, panel.AGENDA, panel.SPOTIFY = self.saved
+        self.tmp.cleanup()
+
+    def fetch(self, path):
+        with urllib.request.urlopen(self.base + path, timeout=10) as r:
+            return r.status, r.read(), r.headers
+
+    def test_page(self):
+        panel.LANG = "es"
+        code, body, headers = self.fetch("/fridge")
+        self.assertEqual(code, 200)
+        self.assertTrue(headers["Content-Type"].startswith("text/html"))
+        self.assertIn(b'lang="es"', body)
+
+    def test_api_shape(self):
+        panel.AGENDA, panel.SPOTIFY = FakeAgenda(), FakeSpotify()
+        data = json.loads(self.fetch("/api/fridge")[1])
+        self.assertEqual(sorted(data), ["agenda", "playing", "settings"])
+        self.assertEqual(data["agenda"], FakeAgenda().snapshot())
+        self.assertEqual(data["playing"]["song"], "Canción")
+        self.assertEqual(data["settings"], {"dim": "00:00-07:00", "back_s": 120})
+
+    def test_api_without_readers(self):
+        panel.AGENDA = panel.SPOTIFY = None
+        data = json.loads(self.fetch("/api/fridge")[1])
+        self.assertEqual(data["agenda"], {"calendars": [], "events": [], "stale": False})
+        self.assertIsNone(data["playing"])
+
+    def test_api_settings_from_config(self):
+        (panel.CONFIG / "fridge").write_text("dim=01:00-08:30\nback_s=5\n")
+        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"], {"dim": "01:00-08:30", "back_s": 120})
+        (panel.CONFIG / "fridge").write_text("dim=late\nback_s=300\n")
+        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"], {"dim": "00:00-07:00", "back_s": 300})
+
+    def test_old_page_unchanged(self):
+        self.assertEqual(self.fetch("/")[0], 200)
+        self.assertEqual(sorted(json.loads(self.fetch("/api/status")[1])), self.STATUS_KEYS)
+
+
 if __name__ == "__main__":
     unittest.main()

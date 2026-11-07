@@ -27,9 +27,12 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import fridge
+from agenda import Agenda
 from cameras import Stills, is_home, kill_leftovers, load_names
 from clips import CLIP, DAY, FOLDER, THUMB, ClipStore
 from settings import disk_settings, read_kv, shows_recordings
+from spotify import Spotify
 from system import Sampler, battery_watts, load_word, sysinfo
 
 HOME = Path.home()
@@ -2010,6 +2013,28 @@ def tabs():
     return out if len(out) > 1 and any(t.get("self") for t in out) else []
 
 
+# --- Fridge tablet (/fridge) ----------------------------------------------------------------------
+# Calendars and Spotify are read by agenda.py and spotify.py; the page itself is in fridge.py.
+AGENDA = None
+SPOTIFY = None
+NO_AGENDA = {"calendars": [], "events": [], "stale": False}
+
+
+def fridge_settings():
+    """The page's own settings, from FRIDGE_DIM and FRIDGE_BACK_S (scripts/08-panel.sh)."""
+    kv = read_kv(CONFIG / "fridge")
+    dim = kv.get("dim", "")
+    back = kv.get("back_s", "")
+    back_s = int(back) if back.isdigit() and 30 <= int(back) <= 3600 else 120
+    return {"dim": dim if re.fullmatch(r"\d\d:\d\d-\d\d:\d\d", dim) else "00:00-07:00", "back_s": back_s}
+
+
+def fridge_data():
+    return {"agenda": AGENDA.snapshot() if AGENDA else NO_AGENDA,
+            "playing": SPOTIFY.now_playing() if SPOTIFY else None,
+            "settings": fridge_settings()}
+
+
 def render():
     text = TEXT.get(LANG, TEXT["en"])
     title = CONFIG / "title"  # PANEL_TITLE in .env, written by scripts/08-panel.sh
@@ -2048,6 +2073,10 @@ class Handler(BaseHTTPRequestHandler):
             body, kind = json.dumps(status(self.client_address[0])).encode(), "application/json"
         elif self.path in ("/", "/index.html"):
             body, kind = render(), "text/html; charset=utf-8"
+        elif self.path == "/api/fridge":
+            body, kind = json.dumps(fridge_data()).encode(), "application/json"
+        elif self.path.split("?", 1)[0] == "/fridge":
+            body, kind = fridge.render(LANG), "text/html; charset=utf-8"
         elif self.path == "/manifest.json":
             body, kind = manifest(), "application/manifest+json"
         elif self.path.lstrip("/") in ICONS and ICONS[self.path.lstrip("/")].exists():
@@ -2332,4 +2361,7 @@ if __name__ == "__main__":
         STILLS.start_reaper()
         # each ffmpeg has its own process group: stopping the panel must stop them too
         signal.signal(signal.SIGTERM, lambda *_: (STILLS.stop_all(), os._exit(0)))
+    AGENDA = Agenda(CONFIG / "calendars")  # FRIDGE_CAL_* in .env; no file, no calendars
+    AGENDA.start()
+    SPOTIFY = Spotify(CONFIG / "spotify")  # written by scripts/spotify-login.sh
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
