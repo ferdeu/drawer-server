@@ -49,7 +49,8 @@ def main():
 
     server = HTTPServer(("127.0.0.1", 8888), Callback)
     auth = "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode({
-        "client_id": client_id, "response_type": "code", "redirect_uri": REDIRECT, "scope": SCOPE, "state": state})
+        "client_id": client_id, "response_type": "code", "redirect_uri": REDIRECT, "scope": SCOPE, "state": state,
+        "show_dialog": "true"})  # always ask, showing which account: a browser logged in as someone else is caught
     print("Opening Spotify in the browser: log in with the account whose music the tablet shows, then accept.",
           file=sys.stderr)
     print(f"If no browser opens, copy this address into one:\n  {auth}", file=sys.stderr)
