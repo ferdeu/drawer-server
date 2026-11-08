@@ -211,6 +211,8 @@ echo "  At home:        http://$HOST:$PANEL_PORT"
 [ -n "${PHONE_TS_IP:-}" ] && echo "  From anywhere:  http://$PHONE_TS_IP:$PANEL_PORT  (with Tailscale on your device)"
 if [ -n "$HTTPS_URL" ]; then
   echo "  Fridge tablet:  $HTTPS_URL  (once on the tablet: http://$HOST:$PANEL_PORT/ca.crt, see docs/panel.md)"
+  # the download is plain http: after installing, the tablet's fingerprint must match this one
+  (cd "$REPO_ROOT/local/https" && openssl x509 -in ca.pem -noout -fingerprint -sha256 | sed 's/^.*=/  Home certificate SHA-256: /')
 else
   echo "  Fridge tablet:  http://$HOST:$PANEL_PORT/fridge"
 fi

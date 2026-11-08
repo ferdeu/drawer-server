@@ -190,7 +190,10 @@ to trust it:
 2. Settings → Security (or *Security & privacy*) → *More security settings* → *Encryption &
    credentials* → *Install a certificate* → **CA certificate** → *Install anyway* → pick the file.
    Android may ask you to set a screen lock first.
-3. Open `https://<server-ip>:8443/fridge`: no warning. In Chrome's ⋮ menu, *Add to Home screen*
+3. Check it's yours: *Encryption & credentials* → *Trusted credentials* → **User** → tap it. Its
+   SHA-256 fingerprint must match the *Home certificate SHA-256* line step 8 prints (the download
+   was plain http, so someone else on the Wi-Fi could have swapped it). If not, remove it.
+4. Open `https://<server-ip>:8443/fridge`: no warning. In Chrome's ⋮ menu, *Add to Home screen*
    gives it an icon that opens full screen.
 
 The home certificate can only vouch for home addresses (192.168…, 10…, 172.16–31…), never for a
