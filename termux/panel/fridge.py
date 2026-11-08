@@ -57,7 +57,8 @@ FRIDGE_PAGE = r"""<!doctype html>
   #wrap { position:fixed; inset:0; transition:transform 2s ease, filter 3s ease; }
   body.dim #wrap { filter:brightness(.35); }
   #strip { display:flex; height:100%; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory;
-           scrollbar-width:none; overscroll-behavior:contain; }
+           scrollbar-width:none; overscroll-behavior:contain; touch-action:pan-x; }  /* no page zoom: it slid screens */
+  body.full #strip { overflow:hidden; }
   #strip::-webkit-scrollbar { display:none; }
   .screen { flex:0 0 100%; height:100%; scroll-snap-align:start; scroll-snap-stop:always; position:relative;
             padding:30px 48px 50px; display:flex; flex-direction:column; min-width:0; }
@@ -100,7 +101,8 @@ FRIDGE_PAGE = r"""<!doctype html>
   #casa.empty .time { font-size:220px; }
   #casa .left .stale { text-align:center; margin-top:12px; }
   #casa:not(.empty) .left .stale { display:none; }  /* with events, the line sits under the list */
-  .offline { position:absolute; top:8px; left:0; right:0; text-align:center; color:#ff6b6b; font-size:13px; letter-spacing:2px; }
+  .offline { position:absolute; top:8px; left:0; right:0; text-align:center; color:#ff6b6b; font-size:13px; letter-spacing:2px;
+             z-index:6; }  /* above a full-screen camera too */
   #casa .nothing { color:var(--muted); margin-top:26px; font-size:18px; letter-spacing:2px; text-align:center; }
   .play { display:flex; gap:20px; align-items:center; border:1px solid var(--edge); border-radius:18px; padding:14px 18px;
           margin-top:12px; background:linear-gradient(90deg, #0e1a2a, #0a0f18); }
@@ -134,9 +136,16 @@ FRIDGE_PAGE = r"""<!doctype html>
   .cams { flex:1; display:grid; grid-template-columns:2fr 1fr; gap:12px; min-height:0; }
   .cams.one { grid-template-columns:1fr; }
   .cam { position:relative; border-radius:14px; overflow:hidden; border:1px solid var(--edge); background:#000; min-height:0; }
-  .cam:not(.big) { cursor:pointer; }
+  .cam { cursor:pointer; }
   .cam img, .cam cam-live, .cam video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
   .cam.big { grid-row:1 / -1; border-color:#5ee1ff66; box-shadow:0 0 18px #5ee1ff22; }
+  /* the big one tapped: whole screen, pinch to zoom, drag to look around */
+  .cam.full { position:fixed; inset:0; z-index:5; border:0; border-radius:0; touch-action:none; }
+  .cam.full img, .cam.full cam-live { transform-origin:0 0; transform:translate(var(--x, 0), var(--y, 0)) scale(var(--z, 1)); }
+  .cam.full img, .cam.full video { object-fit:contain; }
+  .cam .close { display:none; position:absolute; left:14px; top:10px; z-index:1; width:44px; height:44px; border-radius:50%;
+                background:#000a; color:var(--ink); font-size:22px; line-height:44px; text-align:center; }
+  .cam.full .close { display:block; }
   .cam .live { position:absolute; right:10px; top:8px; font-size:11px; letter-spacing:2px; color:var(--now);
                background:#000a; padding:3px 8px; border-radius:8px; z-index:1; }
   .away { flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:22px; letter-spacing:3px; }
@@ -178,14 +187,14 @@ FRIDGE_PAGE = r"""<!doctype html>
     </div>
     <div class="play" id="play" hidden></div>
   </section>
+  <section class="screen" id="camaras">
+    <div class="head"><div class="label" data-name="camaras"></div><div class="clock"></div></div>
+    <div class="cams" id="cams"></div><div class="away" id="cams-away" hidden></div>
+  </section>
   <section class="screen" id="calendario">
     <div class="head"><div><span class="label" id="week-label"></span> <span class="quiet stale" hidden></span></div>
       <div class="clock"></div></div>
     <div id="week"></div>
-  </section>
-  <section class="screen" id="camaras">
-    <div class="head"><div class="label" data-name="camaras"></div><div class="clock"></div></div>
-    <div class="cams" id="cams"></div><div class="away" id="cams-away" hidden></div>
   </section>
   <section class="screen" id="estado">
     <div class="head"><div class="label" data-name="estado"></div><div class="clock"></div></div>
@@ -457,6 +466,7 @@ function clearStills() {  // a wall tablet runs this for days: every picture is 
   $('#cams').innerHTML = '';
 }
 function drawCams() {
+  closeFull();
   stopPlayer();
   clearStills();
   const home = !!(cams && cams.home);
@@ -469,8 +479,10 @@ function drawCams() {
   $('#cams').classList.toggle('one', n === 1);
   $('#cams').style.gridTemplateRows = `repeat(${Math.max(1, n - 1)}, 1fr)`;
   $('#cams').innerHTML = order.map((c, i) => `<div class="cam${i ? '' : ' big'}" data-n="${c}">` +
-    `<img alt="" data-n="${c}" style="visibility:hidden">${i ? '' : `<div class="live" hidden>● ${esc(T.live)}</div>`}</div>`).join('');
+    `<img alt="" data-n="${c}" style="visibility:hidden">` +
+    `${i ? '' : `<div class="live" hidden>● ${esc(T.live)}</div><div class="close">✕</div>`}</div>`).join('');
   for (const t of document.querySelectorAll('#cams .cam:not(.big)')) t.onclick = () => { big = +t.dataset.n; drawCams(); };
+  zoomable($('#cams .big'));
   stills();
   play(big, true);
 }
@@ -525,8 +537,64 @@ function stopPlayer() {
   player.remove();
   player = null;
 }
+// the big one tapped goes full screen (same video, no reconnect): pinch zooms 1 to 5 times, one finger drags
+// while zoomed, and ✕ or a tap while not zoomed closes it. Swiping to other screens is off meanwhile.
+let zoom = {z: 1, x: 0, y: 0};
+function setZoom(tile, z, x, y) {
+  z = Math.min(5, Math.max(1, z));
+  const w = tile.clientWidth, h = tile.clientHeight;
+  zoom = {z, x: Math.min(0, Math.max(w - w * z, x)), y: Math.min(0, Math.max(h - h * z, y))};
+  tile.style.setProperty('--z', zoom.z);
+  tile.style.setProperty('--x', zoom.x + 'px');
+  tile.style.setProperty('--y', zoom.y + 'px');
+}
+function closeFull() {
+  const t = $('#cams .full');
+  if (t) { t.classList.remove('full'); setZoom(t, 1, 0, 0); }
+  document.body.classList.remove('full');
+}
+function zoomable(tile) {
+  const fingers = new Map();
+  let from = null, moved = false;  // from: where the fingers and the zoom were when this gesture started
+  const at = e => { const r = tile.getBoundingClientRect(); return {x: e.clientX - r.left, y: e.clientY - r.top}; };
+  const restart = () => {
+    const p = [...fingers.values()];
+    from = !p.length ? null : p.length === 1 ? {p: p[0], zoom}
+      : {zoom, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1, m: {x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2}};
+  };
+  tile.addEventListener('pointerdown', e => {
+    if (!tile.classList.contains('full')) return;
+    if (!fingers.size) moved = false;
+    fingers.set(e.pointerId, at(e));
+    restart();
+  });
+  tile.addEventListener('pointermove', e => {
+    if (!fingers.has(e.pointerId) || !from) return;
+    fingers.set(e.pointerId, at(e));
+    const p = [...fingers.values()], z0 = from.zoom;
+    if (p.length >= 2 && from.d) {  // the point between the two fingers stays under them
+      const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), m = {x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2};
+      const z = Math.min(5, Math.max(1, z0.z * d / from.d));
+      setZoom(tile, z, m.x - (from.m.x - z0.x) * z / z0.z, m.y - (from.m.y - z0.y) * z / z0.z);
+      moved = true;
+    } else if (p.length === 1 && from.p) {
+      const dx = p[0].x - from.p.x, dy = p[0].y - from.p.y;
+      if (Math.abs(dx) + Math.abs(dy) > 8) moved = true;
+      setZoom(tile, z0.z, z0.x + dx, z0.y + dy);
+    }
+  });
+  for (const name of ['pointerup', 'pointercancel']) tile.addEventListener(name, e => { fingers.delete(e.pointerId); restart(); });
+  tile.addEventListener('click', e => {
+    if (!tile.classList.contains('full')) {
+      tile.classList.add('full');
+      document.body.classList.add('full');
+      setZoom(tile, 1, 0, 0);
+    } else if (e.target.closest('.close') || (!moved && zoom.z === 1)) closeFull();
+  });
+}
+
 onShow('camaras', () => { camsOn = true; drawCams(); stillTimer = setInterval(stills, 2500); refreshStatus(); });
-onHide('camaras', () => { camsOn = false; clearInterval(stillTimer); stopPlayer(); clearStills(); });
+onHide('camaras', () => { camsOn = false; closeFull(); clearInterval(stillTimer); stopPlayer(); clearStills(); });
 
 // --- Estado ---
 const num = (x, d = 0) => Number(x).toLocaleString(LANG, {maximumFractionDigits: d});

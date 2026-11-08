@@ -138,9 +138,10 @@ or tap the dots at the bottom:
 
 - **Home**: a big clock and date, what's left of today in your calendars (an event in progress says
   **NOW**), and at the bottom what's playing on Spotify, only while something plays.
-- **Calendar**: today and the next six days.
 - **Cameras** (step 11): one camera big and live, the others as stills; tap a small one to make it
-  the big one. Home only, like in the panel.
+  the big one. Tap the big one for the whole screen: pinch to zoom, drag to look around, ✕ (or a
+  tap while not zoomed) to go back. Home only, like in the panel.
+- **Calendar**: today and the next six days.
 - **Status**: internet, who's home, ink, the server, storage and the devices on the Wi-Fi, from
   the same data as the panel.
 

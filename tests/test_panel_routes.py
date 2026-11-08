@@ -1,5 +1,6 @@
 """Tests for the panel's routes (cameras, recordings, devices). Run on the phone: bash tests/run-on-phone.sh"""
 import json
+import re
 import socket
 import sys
 import tempfile
@@ -1048,6 +1049,11 @@ class FridgeTest(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertTrue(headers["Content-Type"].startswith("text/html"))
         self.assertIn(b'lang="es"', body)
+
+    def test_screen_order(self):
+        body = self.fetch("/fridge")[1].decode()
+        found = re.findall(r'<section class="screen" id="(\w+)"', body)
+        self.assertEqual(found, ["casa", "camaras", "calendario", "estado"])
 
     def test_api_shape(self):
         panel.AGENDA, panel.SPOTIFY = FakeAgenda(), FakeSpotify()
