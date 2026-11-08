@@ -132,12 +132,14 @@ photo backup side by side, and the server's cards in one row (three per row on m
 ## Fridge tablet
 
 A second page for a tablet that stays on all day, lying sideways (tested size: an 11" tablet,
-2000×1200). Open `http://<server-ip>:8080/fridge` (step 8 prints it). Use the number, not a name:
-the page's data is only given to an address typed as an IP. It has four screens; swipe sideways
-or tap the dots at the bottom:
+2000×1200). Open `https://<server-ip>:8443/fridge` in Chrome on the tablet (step 8 prints it), after
+trusting the home certificate once (below). Use the number, not a name: the page's data is only given
+to an address typed as an IP. (`http://<server-ip>:8080/fridge` works too, but there Spotify only
+shows what plays and the screen may turn off.) It has four screens; swipe sideways or tap the dots
+at the bottom:
 
 - **Home**: a big clock and date, what's left of today in your calendars (an event in progress says
-  **NOW**), and at the bottom what's playing on Spotify, only while something plays.
+  **NOW**), and at the bottom the Spotify strip (below).
 - **Cameras** (step 11): one camera big and live, the others as stills; tap a small one to make it
   the big one. Tap the big one for the whole screen: pinch to zoom, drag to look around, ✕ (or a
   tap while not zoomed) to go back. Home only, like in the panel.
@@ -163,18 +165,46 @@ The server reads them every 10 minutes. If the internet is down it keeps showing
 with a small "no connection to the calendar" line. The addresses are secrets: anyone with one can
 read that calendar, so they stay in `.env` and on the server, never on the page.
 
-**What's playing.** Spotify only (YouTube Music has no way to ask). A Spotify **Premium** account
-makes a free app at [developer.spotify.com](https://developer.spotify.com/dashboard): any name,
-redirect URI `http://127.0.0.1:8888/callback`, "Web API". Put its Client ID and Client secret in
-`.env` as `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`, then run `bash scripts/spotify-login.sh`
-on your computer and accept in the browser that opens, with the account whose music you want to
-see. It shows what that account plays on any device.
+**Spotify.** The tablet becomes a Spotify speaker called *Fridge* (*Heladera* in Spanish): plug a
+Bluetooth speaker into the tablet and play music from the page itself. The strip at the bottom of
+Home shows what the account is playing on any device, with back, pause and next; while it plays
+somewhere else, **Play here** brings it to the tablet. The magnifier opens a search screen: what was
+played lately and the account's playlists, or type a song, artist, album or playlist and tap it.
+A song keeps playing the rest of its album.
 
-**Keeping the screen on.** A web page can't do it over plain `http` (the browser only allows it on
-`https`), so install **Fully Kiosk Browser** from the Play Store and set: *Start URL* to the
-address above, *Keep Screen On*, and *Start on Boot*. Nothing needs developer options or a cable.
-If the tablet has a battery-protection mode (Lenovo's stops charging around 60–80%), turn it on,
-since it will be plugged in for good; otherwise a second smart plug can keep it between 30 and 80%.
+It needs a Spotify **Premium** account (a family-plan member counts) and a free app made with that
+account at [developer.spotify.com](https://developer.spotify.com/dashboard): any name, redirect URI
+`http://127.0.0.1:8888/callback`, "Web API". Put its Client ID and Client secret in `.env` as
+`SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`, then run `bash scripts/spotify-login.sh` on your
+computer and accept in the browser that opens; the page shows which account is accepting, so check
+it's the right one. Logged in before these features came? Run it again to allow them. The page gets
+an access token that lasts an hour, only at home and only over https; the client secret and the
+login stay on the server.
+
+**The home certificate (once per tablet).** Spotify only plays inside `https` pages, and a page
+can only keep the screen on there. Step 8 makes a home certificate on your computer
+(`local/https/`, never shared) and gives the server an https address signed by it. Teach the tablet
+to trust it:
+
+1. On the tablet, open `http://<server-ip>:8080/ca.crt` in Chrome; it downloads a small file.
+2. Settings → Security (or *Security & privacy*) → *More security settings* → *Encryption &
+   credentials* → *Install a certificate* → **CA certificate** → *Install anyway* → pick the file.
+   Android may ask you to set a screen lock first.
+3. Open `https://<server-ip>:8443/fridge`: no warning. In Chrome's ⋮ menu, *Add to Home screen*
+   gives it an icon that opens full screen.
+
+The home certificate can only vouch for home addresses (192.168…, 10…, 172.16–31…), never for a
+website, so even someone who stole its key from your computer couldn't pass off a fake bank or
+Google page to the tablet. Its key never leaves your computer. The server's own certificate lasts a year; step 8 makes a new one before it runs out
+(run step 8 at least once a year) or when the server's IP changes, and the tablet needs nothing new.
+Without step 2 the page still opens after Chrome's warning, but Chrome forgets that choice after
+about a week and the page stops getting data until someone accepts it again.
+
+**Keeping the screen on.** Over `https` the page asks Chrome to keep the screen on while it is open.
+If the tablet restarts, tap the icon again. (A kiosk app like Fully Kiosk Browser can also do it and
+start on boot; it is not needed.) If the tablet has a battery-protection mode (Lenovo's stops
+charging around 60–80%), turn it on, since it will be plugged in for good; otherwise a second smart
+plug can keep it between 30 and 80%.
 
 ## Tips
 

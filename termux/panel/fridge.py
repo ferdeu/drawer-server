@@ -20,6 +20,11 @@ TEXT = {
                 "light cyan": "light cyan", "light magenta": "light magenta"},
         "svc": {"SSH": "Remote access", "NextDNS": "Ad blocking", "Luanti": "Kids' game", "Syncthing": "Photo backup",
                 "Cameras": "Cameras", "Recorder": "Recorder"},
+        "sp_device": "Fridge", "sp_idle": "Nothing playing", "sp_here": "Playing here", "sp_away": "Playing on {d}",
+        "sp_paused": "Paused", "sp_resume": "Play «{t}» again", "sp_search": "Find music", "sp_move": "Play here",
+        "sp_find": "Song, artist, album or playlist", "sp_recent": "Played lately", "sp_lists": "Your playlists",
+        "sp_songs": "Songs", "sp_more": "Artists, albums and playlists", "sp_none": "Nothing found",
+        "sp_failed": "Spotify didn't answer", "sp_kind": {"artist": "Artist", "album": "Album", "playlist": "Playlist"},
     },
     "es": {
         "title": "Casa", "names": {"casa": "Casa", "calendario": "Calendario", "camaras": "Cámaras", "estado": "Estado"},
@@ -38,6 +43,12 @@ TEXT = {
                 "light cyan": "cian claro", "light magenta": "magenta claro"},
         "svc": {"SSH": "Acceso remoto", "NextDNS": "Bloqueo de publicidad", "Luanti": "Juego de los chicos",
                 "Syncthing": "Backup de fotos", "Cameras": "Cámaras", "Recorder": "Grabador"},
+        "sp_device": "Heladera", "sp_idle": "No está sonando nada", "sp_here": "Sonando en la heladera",
+        "sp_away": "Sonando en {d}", "sp_paused": "En pausa", "sp_resume": "Seguir con «{t}»",
+        "sp_search": "Buscar música", "sp_move": "Pasar a la heladera", "sp_find": "Tema, artista, disco o lista",
+        "sp_recent": "Escuchado hace poco", "sp_lists": "Tus listas", "sp_songs": "Temas",
+        "sp_more": "Artistas, discos y listas", "sp_none": "No encontré nada", "sp_failed": "Spotify no contestó",
+        "sp_kind": {"artist": "Artista", "album": "Disco", "playlist": "Lista"},
     },
 }
 
@@ -104,17 +115,61 @@ FRIDGE_PAGE = r"""<!doctype html>
   .offline { position:absolute; top:8px; left:0; right:0; text-align:center; color:#ff6b6b; font-size:13px; letter-spacing:2px;
              z-index:6; }  /* above a full-screen camera too */
   #casa .nothing { color:var(--muted); margin-top:26px; font-size:18px; letter-spacing:2px; text-align:center; }
-  .play { display:flex; gap:20px; align-items:center; border:1px solid var(--edge); border-radius:18px; padding:14px 18px;
-          margin-top:12px; background:linear-gradient(90deg, #0e1a2a, #0a0f18); }
-  .cover { width:74px; height:74px; border-radius:10px; flex:none; object-fit:cover;
+  /* Spotify strip: what's playing (here or elsewhere), its buttons, and the search screen */
+  .play { display:flex; gap:18px; align-items:center; border:1px solid var(--edge); border-radius:18px; padding:12px 16px;
+          margin-top:12px; background:linear-gradient(90deg, #0e1a2a, #0a0f18); min-height:98px; }
+  .cover { width:72px; height:72px; border-radius:10px; flex:none; object-fit:cover;
            background:linear-gradient(135deg,#ff5f9e,#7c5cff 55%,#2bd9ff); box-shadow:0 0 18px #7c5cff55; }
+  .cover.dull { opacity:.35; box-shadow:none; }
   .play .mid { flex:1; min-width:0; }
-  .play .src { color:#1ed760; font-size:12px; letter-spacing:3px; text-transform:uppercase; }
+  .play .src { color:#1ed760; font-size:12px; letter-spacing:3px; text-transform:uppercase; white-space:nowrap;
+               overflow:hidden; text-overflow:ellipsis; }
+  .play .src.away { color:#ffc857; }
   .play .song { font-size:22px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .play .art { color:var(--muted); font-size:16px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .play .idle { color:var(--muted); font-size:20px; letter-spacing:1px; }
   .bar { height:3px; background:#1f2a3a; border-radius:3px; margin-top:10px; position:relative; }
   .bar i { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--glow); border-radius:3px; box-shadow:0 0 8px var(--glow); }
-  .play .where { color:var(--muted); font-size:14px; text-align:right; max-width:200px; font-variant-numeric:tabular-nums; }
+  .btns { display:flex; gap:10px; align-items:center; flex:none; }
+  .rb { width:58px; height:58px; border-radius:50%; border:1px solid #2a3546; background:#0b1422; display:grid;
+        place-items:center; cursor:pointer; color:var(--ink); font-size:22px; }
+  .rb svg { width:24px; height:24px; fill:var(--ink); }
+  .rb.main { width:66px; height:66px; border-color:#5ee1ff88; box-shadow:0 0 14px #5ee1ff33; }
+  .rb.main svg { fill:var(--glow); width:28px; height:28px; }
+  .rb:active, .pill:active, .row:active, .card:active { opacity:.6; }
+  .pill { height:58px; border-radius:29px; border:1px solid #2a3546; background:#0b1422; display:flex; align-items:center;
+          gap:10px; padding:0 22px; font-size:18px; color:var(--ink); white-space:nowrap; cursor:pointer; max-width:330px; overflow:hidden; text-overflow:ellipsis; }
+  .pill svg { width:22px; height:22px; fill:var(--glow); flex:none; }
+  .pill.go { border-color:#ffc85788; color:#ffc857; }
+  .pill.go svg { fill:#ffc857; }
+  .vol { display:flex; flex-direction:column; gap:6px; }
+  .vol .rb { width:42px; height:42px; }
+  .vol .rb svg { width:18px; height:18px; }
+  #sx { position:fixed; inset:0; z-index:5; padding:26px 40px; display:flex; flex-direction:column;
+        background:radial-gradient(ellipse at 30% 10%, #0b1626 0%, var(--bg) 70%); }
+  #sx .top { display:flex; gap:14px; align-items:center; }
+  #sx .box { flex:1; height:58px; border-radius:29px; border:1px solid #5ee1ff77; background:#0a111c; display:flex;
+             align-items:center; gap:12px; padding:0 22px; box-shadow:0 0 16px #5ee1ff22; }
+  #sx .box svg { width:22px; height:22px; fill:var(--glow); flex:none; }
+  #sx input { flex:1; min-width:0; background:none; border:0; outline:0; color:var(--ink); font:inherit; font-size:22px;
+              -webkit-user-select:text; user-select:text; }
+  #sx input::placeholder { color:var(--muted); }
+  #sx .cols { display:grid; grid-template-columns:1.25fr 1fr; gap:34px; margin-top:22px; flex:1; min-height:0; }
+  #sx .cols > div { min-height:0; overflow:hidden; }
+  #sx h4 { margin:0 0 8px; color:var(--glow); font-weight:400; font-size:12px; letter-spacing:3px; text-transform:uppercase; opacity:.85; }
+  #sx .msg { color:var(--muted); font-size:18px; margin-top:30px; }
+  .row { display:flex; gap:14px; align-items:center; padding:9px 4px; border-top:1px solid var(--edge); cursor:pointer; }
+  .row .c { width:50px; height:50px; border-radius:8px; flex:none; object-fit:cover; background:#1a2433; }
+  .row .t { font-size:19px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .a { color:var(--muted); font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row > div { min-width:0; }
+  .row .d { margin-left:auto; color:var(--muted); font-size:14px; font-variant-numeric:tabular-nums; flex:none; }
+  .cards { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
+  .card { cursor:pointer; min-width:0; }
+  .card .c { width:100%; aspect-ratio:1; border-radius:12px; object-fit:cover; display:block; background:#1a2433; }
+  .card.round .c { border-radius:50%; }
+  .card .t { font-size:15px; margin-top:7px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card .a { color:var(--muted); font-size:12px; letter-spacing:1px; text-transform:uppercase; }
 
   /* Calendario: today and the next six days */
   #week { display:grid; grid-template-columns:repeat(7, 1fr); gap:10px; flex:1; min-height:0; }
@@ -203,6 +258,11 @@ FRIDGE_PAGE = r"""<!doctype html>
 </main>
 <div class="offline" id="offline" hidden></div>
 <nav class="dots" id="dots"></nav>
+<div id="sx" hidden>
+  <div class="top"><label class="box"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>
+    <input id="sq" type="search" autocomplete="off" enterkeyhint="search"></label><div class="rb" id="sx-close">✕</div></div>
+  <div class="cols"><div><h4 id="sx-h1"></h4><div id="sx-l"></div></div><div><h4 id="sx-h2"></h4><div class="cards" id="sx-r"></div></div></div>
+</div>
 </div>
 <script>
 const T = __TEXT__;
@@ -267,7 +327,9 @@ let touched = Date.now();
 for (const name of ['pointerdown', 'touchstart', 'keydown']) addEventListener(name, () => { touched = Date.now(); }, {passive: true});
 strip.addEventListener('scroll', () => { touched = Date.now(); }, {passive: true});
 setInterval(() => {
-  if (current && current !== screens[0] && Date.now() - touched > data.settings.back_s * 1000) go(screens[0]);
+  if (Date.now() - touched <= data.settings.back_s * 1000) return;
+  closeSearch();
+  if (current && current !== screens[0]) go(screens[0]);
 }, 5000);
 
 // screen care: everything moves a few pixels every 3 minutes, and the page dims at night
@@ -353,29 +415,240 @@ function drawWeek(now) {
   for (const box of document.querySelectorAll('#week .its')) fit(box, '.it');
 }
 
-// --- Now playing ---
-let playingKey = '';
+// --- Spotify: the strip on Casa, always there once Spotify is set up. Over https the page is itself a
+// Spotify speaker ("Heladera"), so music can be found and played right here; over http it only shows. ---
+const ICON = {
+  prev: '<svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M7 5v14l12-7z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M11 5h2v14h-2zM5 11h14v2H5z"/></svg>',
+  minus: '<svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg>',
+  down: '<svg viewBox="0 0 24 24"><path d="M11 4h2v11l4-4 1.4 1.4L12 18.8l-6.4-6.4L7 11l4 4z"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 0 1 5.6 11.2l5.1 5.1-1.4 1.4-5.1-5.1A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>',
+};
+const CAN_PLAY = location.protocol === 'https:';  // Spotify's spPlayer only works in https pages
+const img = (url, cls) => /^https:\/\//.test(url || '') ? `<img class="${cls}" src="${esc(url)}" alt="">` : `<div class="${cls}"></div>`;
+const coverOf = (images, size = 300) => {
+  const ok = (images || []).filter(i => i && i.url);
+  return ok.length ? ok.reduce((a, b) => Math.abs((a.width || 0) - size) <= Math.abs((b.width || 0) - size) ? a : b).url : '';
+};
+
+let spToken = null, spTokenAt = 0;
+async function token() {  // an hour-long token from the server; asked again every 5 minutes
+  if (spToken && Date.now() - spTokenAt < 300000) return spToken;
+  const r = await get('/api/spotify/token');
+  if (!r.ok) throw new Error('token ' + r.status);
+  spToken = (await r.json()).token;
+  spTokenAt = Date.now();
+  return spToken;
+}
+async function api(method, path, body) {
+  for (let i = 0; i < 2; i++) {
+    const stop = new AbortController(), timer = setTimeout(() => stop.abort(), 10000);
+    try {
+      const r = await fetch('https://api.spotify.com/v1' + path, {method, signal: stop.signal,
+        headers: {Authorization: 'Bearer ' + await token(), 'Content-Type': 'application/json'},
+        body: body ? JSON.stringify(body) : undefined});
+      if (r.status !== 401 || i) return r;
+      spToken = null;  // the token died early: ask for a new one, once
+    } finally { clearTimeout(timer); }
+  }
+}
+const json = async r => (r && r.ok && r.status !== 204) ? r.json() : null;
+
+let spPlayer = null, myDevice = null, local = null, localAt = 0;
+function startPlayer() {
+  if (spPlayer || !CAN_PLAY || !data.spotify) return;
+  spPlayer = 'loading';
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    spPlayer = new Spotify.Player({name: T.sp_device, getOAuthToken: cb => token().then(cb, () => {}), volume: 0.7});
+    spPlayer.addListener('ready', ({device_id}) => { myDevice = device_id; drawPlaying(); });
+    spPlayer.addListener('not_ready', () => { myDevice = null; local = null; drawPlaying(); });
+    spPlayer.addListener('player_state_changed', s => {
+      local = s && s.track_window && s.track_window.current_track ? s : null;
+      localAt = Date.now();
+      drawPlaying();
+    });
+    for (const name of ['initialization_error', 'authentication_error', 'account_error', 'playback_error'])
+      spPlayer.addListener(name, e => console.warn('spotify', name, e && e.message));
+    spPlayer.connect();
+  };
+  const s = document.createElement('script');
+  s.src = 'https://sdk.scdn.co/spotify-player.js';
+  s.onerror = () => { spPlayer = null; };  // no internet: tried again on the next poll
+  document.head.append(s);
+}
+
+// what the strip shows: here (playing or paused on this tablet), away (playing on another device) or idle
+function view() {
+  if (local) {
+    const t = local.track_window.current_track;
+    return {mode: 'here', paused: local.paused, song: t.name, artist: t.artists.map(a => a.name).join(', '),
+            album: t.album.name, cover: coverOf(t.album.images), duration: local.duration,
+            at: local.position + (local.paused ? 0 : Date.now() - localAt)};
+  }
+  const p = data.playing;
+  if (p) return {mode: p.device_id && p.device_id === myDevice ? 'here' : 'away', paused: false, song: p.song,
+                 artist: p.artist, album: p.album, cover: p.cover, device: p.device, duration: p.duration_ms,
+                 at: p.progress_ms + (Date.now() - gotAt)};
+  return {mode: 'idle'};
+}
+let playingKey = '', lastPlayed = null, lastPlayedAt = 0;
 function drawPlaying() {
-  const p = data.playing, box = $('#play');
-  box.hidden = !p;
-  if (!p) { playingKey = ''; return; }
-  const key = [p.song, p.artist, p.album, p.cover, p.device].join('|');
+  const v = view(), box = $('#play');
+  box.hidden = !data.spotify && v.mode === 'idle';
+  if (box.hidden) { playingKey = ''; return; }
+  const ready = CAN_PLAY && !!myDevice;
+  const key = JSON.stringify([v.mode, v.paused, v.song, v.artist, v.cover, v.device, ready, lastPlayed && lastPlayed.name]);
   if (key !== playingKey) {  // same song: only the progress moves, the cover isn't fetched again
     playingKey = key;
-    const cover = /^https:\/\//.test(p.cover || '') ? `<img class="cover" src="${esc(p.cover)}" alt="">` : '<div class="cover"></div>';
-    box.innerHTML = cover + `<div class="mid"><div class="src">● ${esc(T.playing)}</div><div class="song">${esc(p.song)}</div>` +
-      `<div class="art">${esc([p.artist, p.album].filter(Boolean).join(' · '))}</div><div class="bar"><i></i></div></div>` +
-      `<div class="where">${p.device ? esc(fmt(T.on_device, {d: p.device})) + '<br>' : ''}<span class="pos"></span></div>`;
+    const search = ready ? `<div class="rb" data-do="search">${ICON.search}</div>` : '';
+    if (v.mode === 'idle') {
+      box.innerHTML = '<div class="cover dull"></div>' +
+        `<div class="mid"><div class="src">● Spotify</div><div class="idle">${esc(T.sp_idle)}</div></div><div class="btns">` +
+        (ready && lastPlayed ? `<div class="pill" data-do="resume">${ICON.play}${esc(fmt(T.sp_resume, {t: lastPlayed.name}))}</div>` : '') +
+        (ready ? `<div class="pill" data-do="search">${ICON.search}${esc(T.sp_search)}</div>` : '') + '</div>';
+    } else {
+      const here = v.mode === 'here';
+      const where = here ? (v.paused ? T.sp_paused : T.sp_here) : fmt(T.sp_away, {d: v.device || 'Spotify'});
+      box.innerHTML = img(v.cover, 'cover') +
+        `<div class="mid"><div class="src${here ? '' : ' away'}">● ${esc(where)}</div><div class="song">${esc(v.song)}</div>` +
+        `<div class="art">${esc([v.artist, v.album].filter(Boolean).join(' · '))}</div><div class="bar"><i></i></div></div>` +
+        // over http there's no token (it only goes out encrypted): the strip just shows
+        '<div class="btns">' + (CAN_PLAY ? `<div class="rb" data-do="prev">${ICON.prev}</div>` +
+        `<div class="rb main" data-do="toggle">${v.paused ? ICON.play : ICON.pause}</div><div class="rb" data-do="next">${ICON.next}</div>` : '') +
+        (here && local ? `<div class="vol"><div class="rb" data-do="up">${ICON.plus}</div><div class="rb" data-do="down">${ICON.minus}</div></div>` : '') +
+        (!here && ready ? `<div class="pill go" data-do="move">${ICON.down}${esc(T.sp_move)}</div>` : '') + search + '</div>';
+    }
   }
   drawProgress();
 }
 function drawProgress() {
-  const p = data.playing;
-  if (!p || !p.duration_ms) return;
-  const at = Math.min(p.duration_ms, p.progress_ms + (Date.now() - gotAt));
-  $('#play .bar i').style.width = (100 * at / p.duration_ms).toFixed(2) + '%';
-  $('#play .pos').textContent = mss(at) + ' / ' + mss(p.duration_ms);
+  const v = view(), bar = $('#play .bar i');
+  if (!bar || !v.duration) return;
+  bar.style.width = (100 * Math.min(1, v.at / v.duration)).toFixed(2) + '%';
 }
+
+const soon = () => setTimeout(poll, 1500);  // after a button: the server's view of what plays
+async function playHere(body) {
+  if (!myDevice) return;
+  const r = await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(myDevice), body);
+  if (!r || !r.ok) throw new Error('play ' + (r && r.status));
+}
+const ACTIONS = {
+  async prev() { local ? await spPlayer.previousTrack() : await api('POST', '/me/player/previous'); soon(); },
+  async next() { local ? await spPlayer.nextTrack() : await api('POST', '/me/player/next'); soon(); },
+  async toggle() { local ? await spPlayer.togglePlay() : await api('PUT', '/me/player/pause'); soon(); },
+  async up() { await spPlayer.setVolume(Math.min(1, (await spPlayer.getVolume()) + 0.1)); },
+  async down() { await spPlayer.setVolume(Math.max(0, (await spPlayer.getVolume()) - 0.1)); },
+  async move() { await api('PUT', '/me/player', {device_ids: [myDevice], play: true}); soon(); },
+  async resume() { await playHere(lastPlayed.body); },
+  async search() { openSearch(); },
+};
+$('#play').addEventListener('click', e => {
+  const b = e.target.closest('[data-do]');
+  if (!b) return;
+  if (spPlayer && spPlayer.activateElement) spPlayer.activateElement();  // in the tap itself, or the tablet won't play sound
+  ACTIONS[b.dataset.do]().catch(err => console.warn('spotify', b.dataset.do, err));
+});
+
+// what to offer when nothing plays: the last thing played, from its album or playlist
+async function loadLastPlayed() {
+  if (!CAN_PLAY || !data.spotify) return;
+  try {
+    const got = await json(await api('GET', '/me/player/recently-played?limit=1'));
+    const it = got && got.items && got.items[0];
+    if (!it) return;
+    const t = it.track, ctx = it.context && it.context.uri;
+    lastPlayed = {name: t.name, body: ctx ? {context_uri: ctx, offset: {uri: t.uri}} : {uris: [t.uri]}};
+    drawPlaying();
+  } catch (e) { /* stays without it */ }
+}
+
+// --- Spotify search screen ---
+const sq = $('#sq');
+sq.placeholder = T.sp_find;
+const trackBody = t => t.album && t.album.uri ? {context_uri: t.album.uri, offset: {uri: t.uri}} : {uris: [t.uri]};
+let found = [];  // what each row and card plays, by index
+function rowHTML(t) {
+  found.push(trackBody(t));
+  return `<div class="row" data-i="${found.length - 1}">${img(coverOf(t.album && t.album.images, 64), 'c')}` +
+    `<div><div class="t">${esc(t.name)}</div><div class="a">${esc((t.artists || []).map(a => a.name).join(', '))}</div></div>` +
+    `<div class="d">${mss(t.duration_ms || 0)}</div></div>`;
+}
+function cardHTML(x) {
+  found.push({context_uri: x.uri});
+  return `<div class="card${x.type === 'artist' ? ' round' : ''}" data-i="${found.length - 1}">${img(coverOf(x.images), 'c')}` +
+    `<div class="t">${esc(x.name)}</div><div class="a">${esc(T.sp_kind[x.type] || '')}</div></div>`;
+}
+function showResults(h1, tracks, h2, cards) {
+  found = [];
+  $('#sx-h1').textContent = h1;
+  $('#sx-h2').textContent = cards.length ? h2 : '';
+  $('#sx-l').innerHTML = tracks.length ? tracks.map(rowHTML).join('') : `<div class="msg">${esc(T.sp_none)}</div>`;
+  $('#sx-r').innerHTML = cards.map(cardHTML).join('');
+}
+const failed = () => { found = []; $('#sx-l').innerHTML = `<div class="msg">${esc(T.sp_failed)}</div>`; $('#sx-r').innerHTML = ''; };
+async function showStart() {  // before typing: played lately and the account's playlists
+  try {
+    const [recent, lists] = await Promise.all([api('GET', '/me/player/recently-played?limit=20').then(json),
+                                               api('GET', '/me/playlists?limit=6').then(json)]);
+    if (sq.value.trim()) return;
+    const seen = new Set(), tracks = [];
+    for (const it of (recent && recent.items) || []) {
+      if (it.track && !seen.has(it.track.id)) { seen.add(it.track.id); tracks.push(it.track); }
+    }
+    showResults(T.sp_recent, tracks.slice(0, 5), T.sp_lists, ((lists && lists.items) || []).filter(Boolean));
+  } catch (e) { failed(); }
+}
+let typing = null, searchSeq = 0;
+sq.addEventListener('input', () => {
+  clearTimeout(typing);
+  const q = sq.value.trim();
+  if (!q) { showStart(); return; }
+  typing = setTimeout(async () => {
+    const mine = ++searchSeq;
+    try {
+      const r = await json(await api('GET', '/search?type=track,artist,album,playlist&limit=6&q=' + encodeURIComponent(q)));
+      if (mine !== searchSeq || !r) return;
+      const ok = list => ((list && list.items) || []).filter(Boolean);
+      const cards = [...ok(r.artists).slice(0, 1), ...ok(r.albums).slice(0, 3), ...ok(r.playlists).slice(0, 2)];
+      showResults(T.sp_songs, ok(r.tracks).slice(0, 5), T.sp_more, cards);
+    } catch (e) { if (mine === searchSeq) failed(); }
+  }, 450);
+});
+function openSearch() {
+  $('#sx').hidden = false;
+  document.body.classList.add('full');
+  sq.value = '';
+  showResults(T.sp_recent, [], T.sp_lists, []);
+  $('#sx-l').innerHTML = '';
+  showStart();
+  sq.focus();
+}
+function closeSearch() {
+  if ($('#sx').hidden) return;
+  $('#sx').hidden = true;
+  sq.blur();
+  if (!$('#cams .full')) document.body.classList.remove('full');
+}
+$('#sx-close').onclick = closeSearch;
+$('#sx').addEventListener('click', e => {
+  const el = e.target.closest('[data-i]');
+  if (!el || !found[+el.dataset.i]) return;
+  if (spPlayer && spPlayer.activateElement) spPlayer.activateElement();
+  const body = found[+el.dataset.i];
+  closeSearch();
+  playHere(body).then(soon, err => console.warn('spotify play', err));
+});
+
+// over https the screen can be kept on by the page itself (no kiosk app needed)
+async function keepAwake() {
+  try { if (navigator.wakeLock && document.visibilityState === 'visible') await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+document.addEventListener('visibilitychange', keepAwake);
+keepAwake();
 
 // --- Time and data ---
 let lastMinute = '';
@@ -412,6 +685,11 @@ async function poll() {
       gotAt = Date.now();
       drawAll(new Date());
       drawPlaying();
+      startPlayer();
+      if (data.spotify && !lastPlayed && !view().song && Date.now() - lastPlayedAt > 600000) {
+        lastPlayedAt = Date.now();
+        loadLastPlayed();
+      }
     }
   } catch (e) {
     // server restarting or Wi-Fi gone: keep what's on screen, try again later

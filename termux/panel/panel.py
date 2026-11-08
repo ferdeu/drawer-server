@@ -33,10 +33,12 @@ from cameras import Stills, is_home, kill_leftovers, load_names
 from clips import CLIP, DAY, FOLDER, THUMB, ClipStore
 from settings import disk_settings, read_kv, shows_recordings
 from spotify import Spotify
+from tls_relay import TlsRelay
 from system import Sampler, battery_watts, load_word, sysinfo
 
 HOME = Path.home()
 PORT = int(os.environ.get("PANEL_PORT", "8080"))
+HTTPS_PORT = 8443  # the fridge page's https door (tls_relay.py); step 8 prints this one
 LANG = os.environ.get("PANEL_LANG", "en")
 DATA = HOME / ".cache" / "drawer-server"
 BATTERY_LOG = DATA / "battery.csv"
@@ -2020,6 +2022,12 @@ SPOTIFY = None
 NO_AGENDA = {"calendars": [], "events": [], "stale": False}
 
 
+def from_https_door(client_ip, host):
+    """The request came through tls_relay (which lets in home devices only): it connects from the phone
+    itself, and the address typed was the https port. A device on the Wi-Fi can't fake the first part."""
+    return client_ip == "127.0.0.1" and host.rsplit(":", 1)[-1] == str(HTTPS_PORT) and ":" in host
+
+
 def fridge_settings():
     """The page's own settings, from FRIDGE_DIM and FRIDGE_BACK_S (scripts/08-panel.sh)."""
     kv = read_kv(CONFIG / "fridge")
@@ -2037,11 +2045,12 @@ def fridge_data():
         print(f"fridge: calendars failed ({type(e).__name__})", file=sys.stderr)
         agenda = dict(NO_AGENDA, stale=True)
     try:
+        spotify = bool(SPOTIFY and SPOTIFY.configured())  # the page then always shows its Spotify strip
         playing = SPOTIFY.now_playing() if SPOTIFY else None
     except Exception as e:
         print(f"fridge: Spotify failed ({type(e).__name__})", file=sys.stderr)
-        playing = None
-    return {"agenda": agenda, "playing": playing, "settings": fridge_settings()}
+        spotify, playing = False, None
+    return {"agenda": agenda, "playing": playing, "settings": fridge_settings(), "spotify": spotify}
 
 
 def render():
@@ -2089,6 +2098,24 @@ class Handler(BaseHTTPRequestHandler):
             body, kind = json.dumps(fridge_data()).encode(), "application/json"
         elif self.path.split("?", 1)[0] == "/fridge":
             body, kind = fridge.render(LANG), "text/html; charset=utf-8"
+        elif self.path == "/api/spotify/token":
+            # an hour-long token so the tablet itself can play: home only, for the page itself only, and only
+            # through the https door, so it never crosses the Wi-Fi unencrypted
+            ip = self.client_address[0]
+            if not is_home(ip) or not self.same_site() or not from_https_door(ip, self.headers.get("Host", "")):
+                self.send_error(403)
+                return
+            if not SPOTIFY or not SPOTIFY.configured():
+                self.send_error(404)
+                return
+            token = SPOTIFY.access_token()
+            if not token:
+                self.send_error(502)
+                return
+            body, kind = json.dumps({"token": token}).encode(), "application/json"
+        elif self.path == "/ca.crt" and (CONFIG / "https-ca.pem").exists():
+            # the home certificate, for the tablet to trust the https door (public, not a secret)
+            body, kind = (CONFIG / "https-ca.pem").read_bytes(), "application/x-x509-ca-cert"
         elif self.path == "/manifest.json":
             body, kind = manifest(), "application/manifest+json"
         elif self.path.lstrip("/") in ICONS and ICONS[self.path.lstrip("/")].exists():
@@ -2099,6 +2126,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
+        if self.path == "/api/spotify/token":
+            self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -2168,7 +2197,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return False
         origin = self.headers.get("Origin")
-        return origin is None or origin == "http://" + host
+        return origin is None or origin in ("http://" + host, "https://" + host)  # https: the fridge door
 
     def recordings_allowed(self):
         """Recordings shown, asked from home and from the panel's own page; else answers 404/403."""
@@ -2376,4 +2405,10 @@ if __name__ == "__main__":
     AGENDA = Agenda(CONFIG / "calendars")  # FRIDGE_CAL_* in .env; no file, no calendars
     AGENDA.start()
     SPOTIFY = Spotify(CONFIG / "spotify")  # written by scripts/spotify-login.sh
+    if (CONFIG / "https.pem").exists():  # certificate made by scripts/08-panel.sh
+        try:
+            relay = TlsRelay(CONFIG / "https.pem", CONFIG / "https.key", PORT, port=HTTPS_PORT, allow=is_home)
+            threading.Thread(target=relay.serve_forever, daemon=True).start()
+        except (OSError, ValueError) as e:  # a bad certificate or a busy port: the plain page still works
+            print(f"https door not open ({type(e).__name__}: {e})", file=sys.stderr, flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

@@ -44,7 +44,8 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #                                           FRIDGE_CAL_12: name, color and the calendar's secret iCal address
 #   FRIDGE_DIM=00:00-07:00                  the page dims itself between these hours
 #   FRIDGE_BACK_S=120                       back to the first screen after this many seconds untouched
-#   (Spotify's "now playing": bash scripts/spotify-login.sh, once)
+#   (Spotify: bash scripts/spotify-login.sh, once; the tablet plays through https://<phone-ip>:8443/fridge,
+#    with a certificate this script makes in local/https/)
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
 
 [[ "${PANEL_PRINTER_IP:-}" =~ ^([0-9.]+)?$ ]] || die "PANEL_PRINTER_IP should be an address like 192.168.1.40"
@@ -109,6 +110,50 @@ keep_free_gb=%s
   phone_ssh "$HOST" 'cat > ~/.config/drawer-server/disk'
 printf 'show=%s
 ' "${PANEL_RECORDINGS:-}" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/panel-recordings'
+
+# The fridge page's https door (Spotify only plays inside https pages, and the screen only stays on there).
+# A home certificate made once (local/https/ca.pem, 10 years), which the tablet trusts once, signs the
+# phone's own certificate (397 days: Android browsers refuse longer ones), remade here when it nears its
+# end or the phone's IP changed. The home certificate's key never leaves this computer, and it can only
+# vouch for home addresses (192.168..., 10..., 172.16-31...), never for a website.
+# Optional: if openssl fails, the panel still starts, without the https door.
+HTTPS_URL=""
+make_https() {
+  local tls="$REPO_ROOT/local/https"
+  mkdir -p "$tls" || return 1
+  # relative names inside the folder: Git Bash's openssl doesn't understand /c/... paths
+  cd "$tls" || return 1
+  if [ ! -f ca.pem ] || ! openssl x509 -in ca.pem -noout -text 2>/dev/null | grep -q "Name Constraints"; then
+    say "Making the home certificate for the fridge tablet"
+    rm -f ca.pem ca.key ca.srl server.pem
+    (umask 077 && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/O=Drawer server home" \
+      -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+      -addext "nameConstraints=critical,permitted;IP:192.168.0.0/255.255.0.0,permitted;IP:10.0.0.0/255.0.0.0,permitted;IP:172.16.0.0/255.240.0.0,permitted;DNS:home.invalid" \
+      -keyout ca.key -out ca.pem 2>/dev/null) || return 1
+  fi
+  if ! { [ -f server.pem ] && openssl x509 -in server.pem -noout -checkend 2592000 >/dev/null &&
+         openssl x509 -in server.pem -noout -text | grep -qE "IP Address:${HOST//./\.}(,|$| )"; }; then
+    say "Making the phone's https certificate"
+    # no CN: a name there would be checked against "DNS:home.invalid" by some browsers
+    (umask 077 &&
+      printf 'subjectAltName=IP:%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' \
+        "$HOST" > server.ext &&
+      openssl req -newkey rsa:2048 -nodes -subj "/O=Drawer server" -keyout server.key -out server.csr 2>/dev/null &&
+      openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 397 -sha256 \
+        -extfile server.ext -out server.pem 2>/dev/null &&
+      openssl verify -CAfile ca.pem server.pem >/dev/null) || return 1
+  fi
+  phone_ssh "$HOST" 'umask 077; cat > ~/.config/drawer-server/https.key' < server.key &&
+    phone_ssh "$HOST" 'cat > ~/.config/drawer-server/https.pem' < server.pem &&
+    phone_ssh "$HOST" 'cat > ~/.config/drawer-server/https-ca.pem' < ca.pem
+}
+if ! command -v openssl >/dev/null; then
+  warn "openssl not found: no https page for the fridge tablet (it can show Spotify, not play it)"
+elif (make_https); then
+  HTTPS_URL="https://$HOST:8443/fridge"
+else
+  warn "openssl could not make the fridge tablet's certificates: no https page (it can show Spotify, not play it)"
+fi
 if [ "${PANEL_ROUTER:-}" = tplink ]; then
   say "Router card: installing the TP-Link client (first time: ~2 minutes)"
   [ -n "${ROUTER_URL:-}" ] && [ -n "${ROUTER_PASSWORD:-}" ] || die "PANEL_ROUTER=tplink needs ROUTER_URL and ROUTER_PASSWORD in .env"
@@ -164,4 +209,8 @@ curl -sf http://127.0.0.1:$PANEL_PORT/api/status >/dev/null || { cat ~/panel/pan
 say "Panel ready"
 echo "  At home:        http://$HOST:$PANEL_PORT"
 [ -n "${PHONE_TS_IP:-}" ] && echo "  From anywhere:  http://$PHONE_TS_IP:$PANEL_PORT  (with Tailscale on your device)"
-echo "  Fridge tablet:  http://$HOST:$PANEL_PORT/fridge"
+if [ -n "$HTTPS_URL" ]; then
+  echo "  Fridge tablet:  $HTTPS_URL  (once on the tablet: http://$HOST:$PANEL_PORT/ca.crt, see docs/panel.md)"
+else
+  echo "  Fridge tablet:  http://$HOST:$PANEL_PORT/fridge"
+fi

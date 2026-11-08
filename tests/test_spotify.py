@@ -11,7 +11,7 @@ import spotify  # noqa: E402
 TOKEN = (200, json.dumps({"access_token": "tok", "expires_in": 3600}).encode())
 PLAYER = (200, json.dumps({
     "is_playing": True, "progress_ms": 61000,
-    "device": {"name": "Parlante cocina"},
+    "device": {"name": "Parlante cocina", "id": "dev1"},
     "item": {
         "name": "Canción", "duration_ms": 200000,
         "artists": [{"name": "A"}, {"name": "B"}],
@@ -63,7 +63,7 @@ class SpotifyTest(unittest.TestCase):
         opener = FakeOpener([TOKEN], [PLAYER])
         self.assertEqual(self.make(opener).now_playing(), {
             "song": "Canción", "artist": "A, B", "album": "Disco", "cover": "https://i.scdn.co/300",
-            "progress_ms": 61000, "duration_ms": 200000, "device": "Parlante cocina"})
+            "progress_ms": 61000, "duration_ms": 200000, "device": "Parlante cocina", "device_id": "dev1"})
         token_req, player_req = opener.asked
         self.assertEqual(token_req.get_method(), "POST")
         self.assertIn(b"grant_type=refresh_token", token_req.data)
@@ -105,6 +105,40 @@ class SpotifyTest(unittest.TestCase):
         self.time += 4
         self.assertEqual(player.now_playing()["song"], "Canción")
         self.assertEqual(opener.count("api.spotify.com"), 1)
+
+    def test_configured(self):
+        self.assertTrue(self.make(FakeOpener()).configured())
+        self.config.write_text("id\nsecret\n")  # login never finished
+        self.assertFalse(self.make(FakeOpener()).configured())
+
+    def test_access_token(self):
+        opener = FakeOpener([TOKEN])
+        player = self.make(opener)
+        self.assertEqual(player.access_token(), "tok")
+        self.assertEqual(player.access_token(), "tok")  # reused while it lasts
+        self.assertEqual(opener.count("accounts.spotify.com"), 1)
+
+    def test_access_token_without_login(self):
+        self.config.unlink()
+        opener = FakeOpener()
+        self.assertIsNone(self.make(opener).access_token())
+        self.assertEqual(opener.asked, [])
+
+    def test_new_login_drops_the_old_token(self):
+        # logging in again (e.g. to allow more) must not keep using the old login's token for up to an hour
+        second = (200, json.dumps({"access_token": "tok2", "expires_in": 3600}).encode())
+        player = self.make(FakeOpener([TOKEN, second]))
+        self.assertEqual(player.access_token(), "tok")
+        self.config.write_text("id\nsecret\nnewlogin\n")
+        self.assertEqual(player.access_token(), "tok2")
+
+    def test_rotated_refresh_token_keeps_the_token(self):
+        rotated = (200, json.dumps({"access_token": "tok", "expires_in": 3600, "refresh_token": "new"}).encode())
+        opener = FakeOpener([rotated])
+        player = self.make(opener)
+        player.access_token()
+        player.access_token()
+        self.assertEqual(opener.count("accounts.spotify.com"), 1)
 
     def test_errors_are_none(self):
         self.assertIsNone(self.make(FakeOpener([OSError("no internet")])).now_playing())

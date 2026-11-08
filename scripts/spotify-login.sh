@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# One-time Spotify login, so the fridge tablet (http://<phone>:8080/fridge) shows what's playing.
+# One-time Spotify login, so the fridge tablet (https://<phone>:8443/fridge) shows what's playing and
+# plays music itself.
 # Needs a Spotify app made with a Premium account (docs/panel.md, "Fridge tablet") and, in .env:
 #   SPOTIFY_CLIENT_ID=...  SPOTIFY_CLIENT_SECRET=...
 #   bash scripts/spotify-login.sh
 # Opens Spotify in your browser; log in with the account whose music the tablet shows and accept.
 # The keys go straight to the phone (~/.config/drawer-server/spotify), never on screen. Run it again
-# to switch accounts. Runs on your computer, with Python 3.
+# to switch accounts, or if you logged in before the tablet could play (it asks for more permissions
+# now). Runs on your computer, with Python 3. To open it in another Chrome profile, e.g. the account
+# owner's: BROWSER='"C:/Program Files/Google/Chrome/Application/chrome.exe" --profile-directory="Profile 2" %s'
 source "$(dirname "$0")/lib.sh"
 
 load_phone_env

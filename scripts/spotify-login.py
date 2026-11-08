@@ -16,7 +16,10 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 REDIRECT = "http://127.0.0.1:8888/callback"
-SCOPE = "user-read-playback-state"
+# see and control what plays; play inside the fridge page (streaming needs the email and private ones);
+# its search screen shows what was played lately and the account's playlists
+SCOPE = ("user-read-playback-state user-modify-playback-state streaming user-read-email user-read-private "
+         "user-read-recently-played playlist-read-private")
 
 
 def main():

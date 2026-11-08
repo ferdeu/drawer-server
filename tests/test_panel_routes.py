@@ -1010,9 +1010,17 @@ class FakeAgenda:
 
 
 class FakeSpotify:
+    token = "tok-1h"
+
     def now_playing(self):
         return {"song": "Canción", "artist": "A", "album": "B", "cover": "", "progress_ms": 0, "duration_ms": 1,
-                "device": "Parlante"}
+                "device": "Parlante", "device_id": "d1"}
+
+    def configured(self):
+        return True
+
+    def access_token(self):
+        return self.token
 
 
 class FridgeTest(unittest.TestCase):
@@ -1032,6 +1040,7 @@ class FridgeTest(unittest.TestCase):
 
     def setUp(self):
         self.saved = panel.CONFIG, panel.LANG, panel.AGENDA, panel.SPOTIFY
+        self.saved_is_home = panel.is_home
         self.tmp = tempfile.TemporaryDirectory()
         panel.CONFIG = Path(self.tmp.name)
 
@@ -1050,6 +1059,21 @@ class FridgeTest(unittest.TestCase):
         self.assertTrue(headers["Content-Type"].startswith("text/html"))
         self.assertIn(b'lang="es"', body)
 
+    def test_texts_in_both_languages(self):
+        en, es = panel.fridge.TEXT["en"], panel.fridge.TEXT["es"]
+        self.assertEqual(sorted(en), sorted(es))
+        for key, value in en.items():
+            if isinstance(value, dict):
+                self.assertEqual(sorted(value), sorted(es[key]), key)
+
+    def test_page_has_spotify_strip_and_search(self):
+        body = self.fetch("/fridge")[1].decode()
+        self.assertIn('id="play"', body)
+        self.assertIn('id="sx"', body)
+        self.assertIn("navigator.wakeLock", body)  # the screen stays on (https page only)
+        self.assertIn("'https://sdk.scdn.co/spotify-player.js'", body)
+        self.assertIn("'/me/player/recently-played?limit=1'", body)
+
     def test_screen_order(self):
         body = self.fetch("/fridge")[1].decode()
         found = re.findall(r'<section class="screen" id="(\w+)"', body)
@@ -1058,9 +1082,10 @@ class FridgeTest(unittest.TestCase):
     def test_api_shape(self):
         panel.AGENDA, panel.SPOTIFY = FakeAgenda(), FakeSpotify()
         data = json.loads(self.fetch("/api/fridge")[1])
-        self.assertEqual(sorted(data), ["agenda", "playing", "settings"])
+        self.assertEqual(sorted(data), ["agenda", "playing", "settings", "spotify"])
         self.assertEqual(data["agenda"], FakeAgenda().snapshot())
         self.assertEqual(data["playing"]["song"], "Canción")
+        self.assertIs(data["spotify"], True)
         self.assertEqual(data["settings"], {"dim": "00:00-07:00", "back_s": 120})
 
     def test_api_without_readers(self):
@@ -1068,6 +1093,7 @@ class FridgeTest(unittest.TestCase):
         data = json.loads(self.fetch("/api/fridge")[1])
         self.assertEqual(data["agenda"], {"calendars": [], "events": [], "stale": False})
         self.assertIsNone(data["playing"])
+        self.assertIs(data["spotify"], False)
 
     def test_api_settings_from_config(self):
         (panel.CONFIG / "fridge").write_text("dim=01:00-08:30\nback_s=5\n")
@@ -1100,6 +1126,65 @@ class FridgeTest(unittest.TestCase):
                 urllib.request.urlopen(req, timeout=10)
             self.assertEqual(caught.exception.code, 403)
             caught.exception.close()
+
+    def code(self, path, headers=None):
+        req = urllib.request.Request(self.base + path, headers=headers or {})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            e.close()
+            return e.code, b""
+
+    DOOR = {"Host": "192.168.1.170:8443", "Origin": "https://192.168.1.170:8443"}  # as the https door passes it on
+
+    def test_spotify_token(self):
+        panel.SPOTIFY, panel.is_home = FakeSpotify(), lambda ip: True
+        self.addCleanup(setattr, panel, "is_home", self.saved_is_home)
+        req = urllib.request.Request(self.base + "/api/spotify/token", headers=self.DOOR)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            self.assertEqual(json.loads(r.read()), {"token": "tok-1h"})
+            self.assertEqual(r.headers["Cache-Control"], "no-store")  # never kept in the browser's cache
+
+    def test_spotify_token_only_through_the_https_door(self):
+        # on the plain port it would cross the Wi-Fi unencrypted
+        panel.SPOTIFY, panel.is_home = FakeSpotify(), lambda ip: True
+        self.addCleanup(setattr, panel, "is_home", self.saved_is_home)
+        self.assertEqual(self.code("/api/spotify/token")[0], 403)
+        self.assertEqual(self.code("/api/spotify/token", {"Host": "192.168.1.170:8080"})[0], 403)
+
+    def test_https_door_is_told_apart(self):
+        self.assertTrue(panel.from_https_door("127.0.0.1", "192.168.1.170:8443"))
+        self.assertFalse(panel.from_https_door("192.168.1.50", "192.168.1.170:8443"))  # a device faking the Host
+        self.assertFalse(panel.from_https_door("127.0.0.1", "192.168.1.170:8080"))
+        self.assertFalse(panel.from_https_door("127.0.0.1", "192.168.1.170"))
+
+    def test_spotify_token_home_and_own_page_only(self):
+        panel.SPOTIFY = FakeSpotify()
+        self.addCleanup(setattr, panel, "is_home", self.saved_is_home)
+        panel.is_home = lambda ip: False
+        self.assertEqual(self.code("/api/spotify/token", self.DOOR)[0], 403)
+        panel.is_home = lambda ip: True
+        for headers in ({"Host": "evil.example:8443"}, dict(self.DOOR, Origin="http://evil.example"),
+                        dict(self.DOOR, Origin="https://evil.example")):
+            self.assertEqual(self.code("/api/spotify/token", headers)[0], 403, headers)
+
+    def test_spotify_token_without_spotify(self):
+        panel.is_home = lambda ip: True
+        self.addCleanup(setattr, panel, "is_home", self.saved_is_home)
+        panel.SPOTIFY = None
+        self.assertEqual(self.code("/api/spotify/token", self.DOOR)[0], 404)
+        panel.SPOTIFY = FakeSpotify()
+        panel.SPOTIFY.token = None  # no internet, or the login was taken back
+        self.assertEqual(self.code("/api/spotify/token", self.DOOR)[0], 502)
+
+    def test_home_certificate_for_the_tablet(self):
+        self.assertEqual(self.code("/ca.crt")[0], 404)
+        (panel.CONFIG / "https-ca.pem").write_text("-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----\n")
+        code, body, headers = self.fetch("/ca.crt")
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Content-Type"], "application/x-x509-ca-cert")
+        self.assertTrue(body.startswith(b"-----BEGIN CERTIFICATE-----"))
 
     def test_old_page_unchanged(self):
         self.assertEqual(self.fetch("/")[0], 200)
