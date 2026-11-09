@@ -130,7 +130,7 @@ FRIDGE_PAGE = r"""<!doctype html>
   .play .idle { color:var(--muted); font-size:20px; letter-spacing:1px; }
   .bar { height:3px; background:#1f2a3a; border-radius:3px; margin-top:10px; position:relative; }
   .bar i { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--glow); border-radius:3px; box-shadow:0 0 8px var(--glow); }
-  .btns { display:flex; gap:10px; align-items:center; flex:none; }
+  .btns { display:flex; gap:10px; align-items:center; flex:none; min-width:0; }
   .rb { width:58px; height:58px; border-radius:50%; border:1px solid #2a3546; background:#0b1422; display:grid;
         place-items:center; cursor:pointer; color:var(--ink); font-size:22px; }
   .rb svg { width:24px; height:24px; fill:var(--ink); }
@@ -138,7 +138,9 @@ FRIDGE_PAGE = r"""<!doctype html>
   .rb.main svg { fill:var(--glow); width:28px; height:28px; }
   .rb:active, .pill:active, .row:active, .card:active { opacity:.6; }
   .pill { height:58px; border-radius:29px; border:1px solid #2a3546; background:#0b1422; display:flex; align-items:center;
-          gap:10px; padding:0 22px; font-size:18px; color:var(--ink); white-space:nowrap; cursor:pointer; max-width:330px; overflow:hidden; text-overflow:ellipsis; }
+          gap:10px; padding:0 22px; font-size:18px; color:var(--ink); white-space:nowrap; cursor:pointer; max-width:330px; min-width:0;
+          flex:0 1 auto; }
+  .pill span { overflow:hidden; text-overflow:ellipsis; }
   .pill svg { width:22px; height:22px; fill:var(--glow); flex:none; }
   .pill.go { border-color:#ffc85788; color:#ffc857; }
   .pill.go svg { fill:#ffc857; }
@@ -188,7 +190,8 @@ FRIDGE_PAGE = r"""<!doctype html>
   .none { color:#3a4658; font-size:13px; }
 
   /* Cámaras: one big and live, the others as stills */
-  .cams { flex:1; display:grid; grid-template-columns:2fr 1fr; gap:12px; min-height:0; }
+  .cams { flex:1; display:grid; grid-template-columns:2fr 1fr; grid-template-rows:repeat(var(--small, 1), 1fr); gap:12px;
+          min-height:0; }
   .cams.one { grid-template-columns:1fr; }
   .cam { position:relative; border-radius:14px; overflow:hidden; border:1px solid var(--edge); background:#000; min-height:0; }
   .cam { cursor:pointer; }
@@ -227,6 +230,31 @@ FRIDGE_PAGE = r"""<!doctype html>
   .dv span { border:1px solid #7cf5b044; color:#bff5d6; border-radius:16px; padding:3px 10px; font-size:13px; white-space:nowrap; }
   .dv span.off { border-color:#222c3a; color:#4a586c; }
   .dv span.bad { border-color:#ff6b6b55; }
+
+  /* Held upright (on the wall it lies down): the same screens, stacked */
+  @media (orientation: portrait) {
+    .screen { padding:28px 24px 50px; }
+    #casa .top { flex-direction:column; align-items:stretch; justify-content:center; gap:26px; }
+    #casa .left { text-align:center; }
+    #casa .right { flex:0 1 auto; border-left:0; border-top:1px solid var(--edge); padding:18px 0 0; }
+    .play { flex-wrap:wrap; }
+    .play .btns { flex:1 1 100%; justify-content:center; }
+    #sx { padding:22px 20px; }
+    #sx .cols { display:block; overflow-y:auto; scrollbar-width:none; }
+    #sx .cols > div { overflow:visible; }
+    #sx .cols > div + div { margin-top:22px; }
+    #week { grid-template-columns:1fr; grid-template-rows:repeat(7, minmax(0, 1fr)); gap:8px; }
+    .col { display:grid; grid-template-columns:88px 1fr; grid-template-rows:auto 1fr; column-gap:12px; padding:8px 12px; }
+    .col .dn { white-space:normal; }
+    .col .dd { grid-row:2; margin:0; }
+    .col .its { grid-column:2; grid-row:1 / -1; display:flex; flex-wrap:wrap; align-content:flex-start; gap:6px 18px; }
+    .col .it { margin:0; max-width:100%; }
+    .col .more { width:100%; padding:0; }
+    .cams { grid-template-columns:repeat(var(--small, 1), 1fr); grid-template-rows:2fr 1fr; }
+    .cams.one { grid-template-columns:1fr; grid-template-rows:1fr; }
+    .cam.big { grid-row:auto; grid-column:1 / -1; }
+    #tiles { grid-template-columns:repeat(2, 1fr); grid-template-rows:none; grid-auto-rows:minmax(0, 1fr); }
+  }
 </style>
 </head>
 <body>
@@ -507,8 +535,8 @@ function drawPlaying() {
     if (v.mode === 'idle') {
       box.innerHTML = '<div class="cover dull"></div>' +
         `<div class="mid"><div class="src">● Spotify</div><div class="idle">${esc(T.sp_idle)}</div></div><div class="btns">` +
-        (ready && lastPlayed ? `<div class="pill" data-do="resume">${ICON.play}${esc(fmt(T.sp_resume, {t: lastPlayed.name}))}</div>` : '') +
-        (ready ? `<div class="pill" data-do="search">${ICON.search}${esc(T.sp_search)}</div>` : '') + '</div>';
+        (ready && lastPlayed ? `<div class="pill" data-do="resume">${ICON.play}<span>${esc(fmt(T.sp_resume, {t: lastPlayed.name}))}</span></div>` : '') +
+        (ready ? `<div class="pill" data-do="search">${ICON.search}<span>${esc(T.sp_search)}</span></div>` : '') + '</div>';
     } else {
       const here = v.mode === 'here';
       const where = here ? (v.paused ? T.sp_paused : T.sp_here) : fmt(T.sp_away, {d: v.device || 'Spotify'});
@@ -519,7 +547,7 @@ function drawPlaying() {
         '<div class="btns">' + (CAN_PLAY ? `<div class="rb" data-do="prev">${ICON.prev}</div>` +
         `<div class="rb main" data-do="toggle">${v.paused ? ICON.play : ICON.pause}</div><div class="rb" data-do="next">${ICON.next}</div>` : '') +
         (here && local ? `<div class="vol"><div class="rb" data-do="up">${ICON.plus}</div><div class="rb" data-do="down">${ICON.minus}</div></div>` : '') +
-        (!here && ready ? `<div class="pill go" data-do="move">${ICON.down}${esc(T.sp_move)}</div>` : '') + search + '</div>';
+        (!here && ready ? `<div class="pill go" data-do="move">${ICON.down}<span>${esc(T.sp_move)}</span></div>` : '') + search + '</div>';
     }
   }
   drawProgress();
@@ -755,7 +783,7 @@ function drawCams() {
   if (big > n) big = 1;
   const order = [big, ...[...Array(n)].map((_, i) => i + 1).filter(i => i !== big)];
   $('#cams').classList.toggle('one', n === 1);
-  $('#cams').style.gridTemplateRows = `repeat(${Math.max(1, n - 1)}, 1fr)`;
+  $('#cams').style.setProperty('--small', Math.max(1, n - 1));
   $('#cams').innerHTML = order.map((c, i) => `<div class="cam${i ? '' : ' big'}" data-n="${c}">` +
     `<img alt="" data-n="${c}" style="visibility:hidden">` +
     `${i ? '' : `<div class="live" hidden>● ${esc(T.live)}</div><div class="close">✕</div>`}</div>`).join('');
@@ -951,6 +979,12 @@ function fitChips(box) {  // the devices that don't fit become "+N"
     more.textContent = '+' + ++hidden;
   }
 }
+matchMedia('(orientation: portrait)').addEventListener('change', () => {
+  drawAll(new Date());
+  if (lastStatus) drawStatus(lastStatus);
+  const s = document.getElementById(current);
+  if (s) strip.scrollLeft = s.offsetLeft;
+});
 refreshStatus();
 </script>
 </body>

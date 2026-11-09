@@ -1074,6 +1074,13 @@ class FridgeTest(unittest.TestCase):
         self.assertIn("'https://sdk.scdn.co/spotify-player.js'", body)
         self.assertIn("'/me/player/recently-played?limit=1'", body)
 
+    def test_fits_the_tablet_upright_too(self):
+        # on the wall it lies down, in the hand it stands up: every screen has an upright layout
+        body = self.fetch("/fridge")[1].decode()
+        self.assertIn("@media (orientation: portrait)", body)
+        self.assertIn("matchMedia('(orientation: portrait)')", body)  # turned: lists are fitted again
+        self.assertNotIn("gridTemplateRows", body)  # the camera grid's shape lives in the CSS
+
     def test_screen_order(self):
         body = self.fetch("/fridge")[1].decode()
         found = re.findall(r'<section class="screen" id="(\w+)"', body)
@@ -1183,7 +1190,9 @@ class FridgeTest(unittest.TestCase):
         (panel.CONFIG / "https-ca.pem").write_text("-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----\n")
         code, body, headers = self.fetch("/ca.crt")
         self.assertEqual(code, 200)
-        self.assertEqual(headers["Content-Type"], "application/x-x509-ca-cert")
+        # a plain download: Android's Chrome hands x509 files to an installer that refuses CA certificates
+        self.assertEqual(headers["Content-Type"], "application/octet-stream")
+        self.assertIn('attachment; filename="home-ca.pem"', headers["Content-Disposition"])
         self.assertTrue(body.startswith(b"-----BEGIN CERTIFICATE-----"))
 
     def test_old_page_unchanged(self):

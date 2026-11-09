@@ -2114,8 +2114,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             body, kind = json.dumps({"token": token}).encode(), "application/json"
         elif self.path == "/ca.crt" and (CONFIG / "https-ca.pem").exists():
-            # the home certificate, for the tablet to trust the https door (public, not a secret)
-            body, kind = (CONFIG / "https-ca.pem").read_bytes(), "application/x-x509-ca-cert"
+            # the home certificate, for the tablet to trust the https door (public, not a secret). A plain
+            # download: Android's Chrome hands x509 files to an installer that refuses CA certificates
+            body, kind = (CONFIG / "https-ca.pem").read_bytes(), "application/octet-stream"
         elif self.path == "/manifest.json":
             body, kind = manifest(), "application/manifest+json"
         elif self.path.lstrip("/") in ICONS and ICONS[self.path.lstrip("/")].exists():
@@ -2128,6 +2129,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if self.path == "/api/spotify/token":
             self.send_header("Cache-Control", "no-store")
+        if self.path == "/ca.crt":
+            self.send_header("Content-Disposition", 'attachment; filename="home-ca.pem"')
         self.end_headers()
         self.wfile.write(body)
 

@@ -145,7 +145,8 @@ make_https() {
   fi
   phone_ssh "$HOST" 'umask 077; cat > ~/.config/drawer-server/https.key' < server.key &&
     phone_ssh "$HOST" 'cat > ~/.config/drawer-server/https.pem' < server.pem &&
-    phone_ssh "$HOST" 'cat > ~/.config/drawer-server/https-ca.pem' < ca.pem
+    phone_ssh "$HOST" 'cat > ~/.config/drawer-server/https-ca.pem' < ca.pem &&
+    cp ca.pem ../home-ca.pem  # the one file for the tablet, away from the keys in this folder
 }
 if ! command -v openssl >/dev/null; then
   warn "openssl not found: no https page for the fridge tablet (it can show Spotify, not play it)"
@@ -210,8 +211,8 @@ say "Panel ready"
 echo "  At home:        http://$HOST:$PANEL_PORT"
 [ -n "${PHONE_TS_IP:-}" ] && echo "  From anywhere:  http://$PHONE_TS_IP:$PANEL_PORT  (with Tailscale on your device)"
 if [ -n "$HTTPS_URL" ]; then
-  echo "  Fridge tablet:  $HTTPS_URL  (once on the tablet: http://$HOST:$PANEL_PORT/ca.crt, see docs/panel.md)"
-  # the download is plain http: after installing, the tablet's fingerprint must match this one
+  echo "  Fridge tablet:  $HTTPS_URL  (once on the tablet: install local/home-ca.pem, see docs/panel.md)"
+  # the file passed through other hands: after installing, the tablet's fingerprint must match this one
   (cd "$REPO_ROOT/local/https" && openssl x509 -in ca.pem -noout -fingerprint -sha256 | sed 's/^.*=/  Home certificate SHA-256: /')
 else
   echo "  Fridge tablet:  http://$HOST:$PANEL_PORT/fridge"

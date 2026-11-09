@@ -186,13 +186,19 @@ can only keep the screen on there. Step 8 makes a home certificate on your compu
 (`local/https/`, never shared) and gives the server an https address signed by it. Teach the tablet
 to trust it:
 
-1. On the tablet, open `http://<server-ip>:8080/ca.crt` in Chrome; it downloads a small file.
-2. Settings → Security (or *Security & privacy*) → *More security settings* → *Encryption &
-   credentials* → *Install a certificate* → **CA certificate** → *Install anyway* → pick the file.
-   Android may ask you to set a screen lock first.
+1. Get the certificate onto the tablet as a file: step 8 leaves it at `local/home-ca.pem` on your
+   computer. Put **only that file** in your Google Drive (or email it to yourself) and download it on
+   the tablet; never share anything from `local/https/`, it holds the keys.
+   Keep the `.pem` ending: Android's Chrome hands `.crt` files to an installer that refuses home
+   certificates, so nothing lands in Downloads. The server also offers it at
+   `http://<server-ip>:8080/ca.crt`, but Chrome often switches what you type to https (which that
+   port doesn't speak), and it won't download anything from a page past a certificate warning.
+2. Settings → tap the magnifier and search **certificate** → **CA certificate** (on Android 11 it
+   hides under *Security* → *Advanced* → *Encryption & credentials* → *Install a certificate*) →
+   *Install anyway* → pick `home-ca.pem`. Android may ask you to set a screen lock first.
 3. Check it's yours: *Encryption & credentials* → *Trusted credentials* → **User** → tap it. Its
-   SHA-256 fingerprint must match the *Home certificate SHA-256* line step 8 prints (the download
-   was plain http, so someone else on the Wi-Fi could have swapped it). If not, remove it.
+   SHA-256 fingerprint must match the *Home certificate SHA-256* line step 8 prints (the file went
+   through other places on its way). If not, remove it.
 4. Open `https://<server-ip>:8443/fridge`: no warning. In Chrome's ⋮ menu, *Add to Home screen*
    gives it an icon that opens full screen.
 
