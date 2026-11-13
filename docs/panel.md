@@ -172,6 +172,17 @@ somewhere else, **Play here** brings it to the tablet. The magnifier opens a sea
 played lately and the account's playlists, or type a song, artist, album or playlist and tap it.
 A song keeps playing the rest of its album.
 
+Some tablets can't play Spotify from a browser: a song sounds for about ten seconds and goes quiet,
+or the page skips through several songs in a second (a *Lenovo Tab M7* does this: its copy-protection
+component, *Widevine*, is the limited kind, which the "DRM Info" app shows as level **L3**). The
+page can then send the music to the **Spotify app** on the tablet instead, which plays fine: install
+the app, log in with the same account, and put `FRIDGE_SPOTIFY_PLAYER=app` in `.env` (step 8). The
+strip, the buttons and the search stay the same; only the app makes the sound, so it must be open
+(in the background is enough). When the page can't see it, the strip says so. `app` looks for the
+account's tablet; if another tablet uses the same account, or the strip keeps asking to open the
+app while it is open, put the tablet's name as Spotify shows it instead
+(`FRIDGE_SPOTIFY_PLAYER="Lenovo TB-7306X"`). Any speaker's name works the same way.
+
 It needs a Spotify **Premium** account (a family-plan member counts) and a free app made with that
 account at [developer.spotify.com](https://developer.spotify.com/dashboard): any name, redirect URI
 `http://127.0.0.1:8888/callback`, "Web API". Put its Client ID and Client secret in `.env` as

@@ -98,7 +98,7 @@ class Spotify:
             return None
         player = json.loads(data)
         item = player.get("item")
-        if not player.get("is_playing") or not item:
+        if not item:
             return None
         album = item.get("album") or {}
         images = [i for i in album.get("images") or [] if i.get("url")]
@@ -112,10 +112,11 @@ class Spotify:
             "duration_ms": item.get("duration_ms") or 0,
             "device": (player.get("device") or {}).get("name", ""),
             "device_id": (player.get("device") or {}).get("id") or "",
+            "playing": bool(player.get("is_playing")),  # False: paused there (the page shows that on the fridge's own device only)
         }
 
     def now_playing(self):
-        """A dict with song, artist, album, cover, progress_ms, duration_ms, device and device_id, or None."""
+        """A dict with song, artist, album, cover, progress_ms, duration_ms, device, device_id and playing, or None."""
         config = self._config()
         if not config:
             return None

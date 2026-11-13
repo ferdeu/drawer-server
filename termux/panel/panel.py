@@ -2029,12 +2029,17 @@ def from_https_door(client_ip, host):
 
 
 def fridge_settings():
-    """The page's own settings, from FRIDGE_DIM and FRIDGE_BACK_S (scripts/08-panel.sh)."""
+    """The page's own settings, from FRIDGE_DIM, FRIDGE_BACK_S and FRIDGE_SPOTIFY_PLAYER (scripts/08-panel.sh)."""
     kv = read_kv(CONFIG / "fridge")
     dim = kv.get("dim", "")
     back = kv.get("back_s", "")
     back_s = int(back) if back.isdigit() and 30 <= int(back) <= 3600 else 120
-    return {"dim": dim if re.fullmatch(r"\d\d:\d\d-\d\d:\d\d", dim) else "00:00-07:00", "back_s": back_s}
+    # what plays the music: "page" (the page itself), "app" (the Spotify app on the tablet) or a device's name
+    player = kv.get("player", "").strip()[:80] or "page"
+    if player.lower() in ("page", "app"):
+        player = player.lower()
+    return {"dim": dim if re.fullmatch(r"\d\d:\d\d-\d\d:\d\d", dim) else "00:00-07:00", "back_s": back_s,
+            "player": player}
 
 
 def fridge_data():

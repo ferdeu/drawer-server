@@ -44,6 +44,8 @@ scp -q -i "$KEY" -P 8022 -o StrictHostKeyChecking=accept-new \
 #                                           FRIDGE_CAL_12: name, color and the calendar's secret iCal address
 #   FRIDGE_DIM=00:00-07:00                  the page dims itself between these hours
 #   FRIDGE_BACK_S=120                       back to the first screen after this many seconds untouched
+#   FRIDGE_SPOTIFY_PLAYER=page              what plays the music: the page itself (default), "app" (the Spotify
+#                                           app on the tablet) or a speaker's name as Spotify shows it
 #   (Spotify: bash scripts/spotify-login.sh, once; the tablet plays through https://<phone-ip>:8443/fridge,
 #    with a certificate this script makes in local/https/)
 PEOPLE_LINES="$(tr ',' '\n' <<<"${PANEL_PEOPLE:-}" | sed -n 's/^ *\([^=]*[^= ]\) *= *\([0-9.]*\) *$/\1 \2/p')"
@@ -91,7 +93,8 @@ if [ -n "$CAL_LINES" ]; then
   phone_ssh "$HOST" "python -c 'import recurring_ical_events' 2>/dev/null || pip install -q recurring-ical-events"
 fi
 # the fridge page re-reads these on every poll
-printf 'dim=%s\nback_s=%s\n' "${FRIDGE_DIM:-}" "${FRIDGE_BACK_S:-}" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/fridge'
+printf 'dim=%s\nback_s=%s\nplayer=%s\n' "${FRIDGE_DIM:-}" "${FRIDGE_BACK_S:-}" "${FRIDGE_SPOTIFY_PLAYER:-}" \
+  | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/fridge'
 if [ -n "${PANEL_TITLE:-}" ]; then
   printf '%s\n' "$PANEL_TITLE" | phone_ssh "$HOST" 'cat > ~/.config/drawer-server/title'
 fi

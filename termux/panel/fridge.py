@@ -25,6 +25,7 @@ TEXT = {
         "sp_find": "Song, artist, album or playlist", "sp_recent": "Played lately", "sp_lists": "Your playlists",
         "sp_songs": "Songs", "sp_more": "Artists, albums and playlists", "sp_none": "Nothing found",
         "sp_failed": "Spotify didn't answer", "sp_kind": {"artist": "Artist", "album": "Album", "playlist": "Playlist"},
+        "sp_open_app": "Open the Spotify app on this tablet to play here", "sp_no_device": "Spotify can't see «{d}»",
     },
     "es": {
         "title": "Casa", "names": {"casa": "Casa", "calendario": "Calendario", "camaras": "Cámaras", "estado": "Estado"},
@@ -49,6 +50,7 @@ TEXT = {
         "sp_recent": "Escuchado hace poco", "sp_lists": "Tus listas", "sp_songs": "Temas",
         "sp_more": "Artistas, discos y listas", "sp_none": "No encontré nada", "sp_failed": "Spotify no contestó",
         "sp_kind": {"artist": "Artista", "album": "Disco", "playlist": "Lista"},
+        "sp_open_app": "Abrí la app de Spotify en esta tablet para escuchar acá", "sp_no_device": "Spotify no ve «{d}»",
     },
 }
 
@@ -308,7 +310,8 @@ const mss = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) +
 // event times come as local "YYYY-MM-DD" (all day) or "YYYY-MM-DDTHH:MM"
 const parse = s => new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), +(s.slice(11, 13) || 0), +(s.slice(14, 16) || 0));
 
-let data = {agenda: {calendars: [], events: [], stale: false}, playing: null, settings: {dim: '00:00-07:00', back_s: 120}};
+let data = {agenda: {calendars: [], events: [], stale: false}, playing: null,
+            settings: {dim: '00:00-07:00', back_s: 120, player: 'page'}};
 let gotAt = Date.now();
 
 // --- Screens: swipe sideways (scroll snap), dots, hooks for the screen that is showing ---
@@ -486,8 +489,30 @@ async function api(method, path, body) {
 const json = async r => (r && r.ok && r.status !== 204) ? r.json() : null;
 
 let spPlayer = null, myDevice = null, local = null, localAt = 0;
+// FRIDGE_SPOTIFY_PLAYER: "page" plays in the page itself (the player below); "app" sends the music to the
+// Spotify app on the tablet (for tablets whose browser goes silent after a few seconds) and a name to that
+// speaker. The strip, the buttons and the search are the same: only where the sound comes out changes.
+const playerSetting = () => data.settings.player || 'page';
+const viaApp = () => playerSetting() !== 'page';
+let appVolume = null, appVolumeOk = false, devicesAt = 0, goneDevice = null;
+async function findDevice() {  // the app or speaker, among the devices the account sees; asked on every poll (15 s)
+  if (!viaApp() || !CAN_PLAY || !data.spotify || Date.now() - devicesAt < 14000) return;
+  devicesAt = Date.now();
+  let got;
+  try { got = await json(await api('GET', '/me/player/devices')); } catch (e) { return; }
+  if (!got || !Array.isArray(got.devices)) return;  // Spotify hiccup: keep what we knew, ask again next poll
+  // "app": the account's tablet (only one tablet should be logged in; otherwise put the tablet's name instead)
+  const want = playerSetting().toLowerCase();
+  const d = got.devices.find(x => want === 'app' ? x.type === 'Tablet' : (x.name || '').toLowerCase() === want);
+  if (!d && myDevice) goneDevice = myDevice;  // the app was closed: Spotify still says it plays there for a while
+  myDevice = d ? d.id : null;
+  if (d) goneDevice = null;
+  appVolumeOk = !!(d && d.supports_volume);
+  if (d && d.volume_percent != null) appVolume = d.volume_percent;
+  drawPlaying();
+}
 function startPlayer() {
-  if (spPlayer || !CAN_PLAY || !data.spotify) return;
+  if (spPlayer || !CAN_PLAY || !data.spotify || viaApp()) return;
   spPlayer = 'loading';
   window.onSpotifyWebPlaybackSDKReady = () => {
     spPlayer = new Spotify.Player({name: T.sp_device, getOAuthToken: cb => token().then(cb, () => {}), volume: 0.7});
@@ -516,10 +541,12 @@ function view() {
             album: t.album.name, cover: coverOf(t.album.images), duration: local.duration,
             at: local.position + (local.paused ? 0 : Date.now() - localAt)};
   }
-  const p = data.playing;
-  if (p) return {mode: p.device_id && p.device_id === myDevice ? 'here' : 'away', paused: false, song: p.song,
+  const p = data.playing && data.playing.device_id !== goneDevice ? data.playing : null;
+  const here = !!(p && p.device_id && p.device_id === myDevice);
+  // paused on our own device: shown, with a play button; paused elsewhere: that's just nothing playing
+  if (p && (p.playing || here)) return {mode: here ? 'here' : 'away', paused: !p.playing, song: p.song,
                  artist: p.artist, album: p.album, cover: p.cover, device: p.device, duration: p.duration_ms,
-                 at: p.progress_ms + (Date.now() - gotAt)};
+                 at: p.progress_ms + (p.playing ? Date.now() - gotAt : 0)};
   return {mode: 'idle'};
 }
 let playingKey = '', lastPlayed = null, lastPlayedAt = 0;
@@ -528,13 +555,15 @@ function drawPlaying() {
   box.hidden = !data.spotify && v.mode === 'idle';
   if (box.hidden) { playingKey = ''; return; }
   const ready = CAN_PLAY && !!myDevice;
-  const key = JSON.stringify([v.mode, v.paused, v.song, v.artist, v.cover, v.device, ready, lastPlayed && lastPlayed.name]);
+  const key = JSON.stringify([v.mode, v.paused, v.song, v.artist, v.cover, v.device, ready, appVolumeOk, lastPlayed && lastPlayed.name]);
   if (key !== playingKey) {  // same song: only the progress moves, the cover isn't fetched again
     playingKey = key;
     const search = ready ? `<div class="rb" data-do="search">${ICON.search}</div>` : '';
     if (v.mode === 'idle') {
+      const hint = CAN_PLAY && viaApp() && !myDevice ?  // the app or speaker isn't there: say what to do
+        (playerSetting() === 'app' ? T.sp_open_app : fmt(T.sp_no_device, {d: playerSetting()})) : T.sp_idle;
       box.innerHTML = '<div class="cover dull"></div>' +
-        `<div class="mid"><div class="src">● Spotify</div><div class="idle">${esc(T.sp_idle)}</div></div><div class="btns">` +
+        `<div class="mid"><div class="src">● Spotify</div><div class="idle">${esc(hint)}</div></div><div class="btns">` +
         (ready && lastPlayed ? `<div class="pill" data-do="resume">${ICON.play}<span>${esc(fmt(T.sp_resume, {t: lastPlayed.name}))}</span></div>` : '') +
         (ready ? `<div class="pill" data-do="search">${ICON.search}<span>${esc(T.sp_search)}</span></div>` : '') + '</div>';
     } else {
@@ -546,7 +575,7 @@ function drawPlaying() {
         // over http there's no token (it only goes out encrypted): the strip just shows
         '<div class="btns">' + (CAN_PLAY ? `<div class="rb" data-do="prev">${ICON.prev}</div>` +
         `<div class="rb main" data-do="toggle">${v.paused ? ICON.play : ICON.pause}</div><div class="rb" data-do="next">${ICON.next}</div>` : '') +
-        (here && local ? `<div class="vol"><div class="rb" data-do="up">${ICON.plus}</div><div class="rb" data-do="down">${ICON.minus}</div></div>` : '') +
+        (here && (local || (viaApp() && appVolumeOk)) ? `<div class="vol"><div class="rb" data-do="up">${ICON.plus}</div><div class="rb" data-do="down">${ICON.minus}</div></div>` : '') +
         (!here && ready ? `<div class="pill go" data-do="move">${ICON.down}<span>${esc(T.sp_move)}</span></div>` : '') + search + '</div>';
     }
   }
@@ -564,12 +593,20 @@ async function playHere(body) {
   const r = await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(myDevice), body);
   if (!r || !r.ok) throw new Error('play ' + (r && r.status));
 }
+async function appVolumeBy(step) {  // the app's or speaker's volume, through Spotify
+  appVolume = Math.max(0, Math.min(100, (appVolume == null ? 50 : appVolume) + step));
+  await api('PUT', '/me/player/volume?volume_percent=' + appVolume + '&device_id=' + encodeURIComponent(myDevice));
+}
 const ACTIONS = {
   async prev() { local ? await spPlayer.previousTrack() : await api('POST', '/me/player/previous'); soon(); },
   async next() { local ? await spPlayer.nextTrack() : await api('POST', '/me/player/next'); soon(); },
-  async toggle() { local ? await spPlayer.togglePlay() : await api('PUT', '/me/player/pause'); soon(); },
-  async up() { await spPlayer.setVolume(Math.min(1, (await spPlayer.getVolume()) + 0.1)); },
-  async down() { await spPlayer.setVolume(Math.max(0, (await spPlayer.getVolume()) - 0.1)); },
+  async toggle() {
+    if (local) await spPlayer.togglePlay();
+    else await api('PUT', view().paused ? '/me/player/play?device_id=' + encodeURIComponent(myDevice) : '/me/player/pause');
+    soon();
+  },
+  async up() { local ? await spPlayer.setVolume(Math.min(1, (await spPlayer.getVolume()) + 0.1)) : await appVolumeBy(10); },
+  async down() { local ? await spPlayer.setVolume(Math.max(0, (await spPlayer.getVolume()) - 0.1)) : await appVolumeBy(-10); },
   async move() { await api('PUT', '/me/player', {device_ids: [myDevice], play: true}); soon(); },
   async resume() { await playHere(lastPlayed.body); },
   async search() { openSearch(); },
@@ -714,6 +751,7 @@ async function poll() {
       drawAll(new Date());
       drawPlaying();
       startPlayer();
+      findDevice();
       if (data.spotify && !lastPlayed && !view().song && Date.now() - lastPlayedAt > 600000) {
         lastPlayedAt = Date.now();
         loadLastPlayed();

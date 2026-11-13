@@ -1093,7 +1093,7 @@ class FridgeTest(unittest.TestCase):
         self.assertEqual(data["agenda"], FakeAgenda().snapshot())
         self.assertEqual(data["playing"]["song"], "Canción")
         self.assertIs(data["spotify"], True)
-        self.assertEqual(data["settings"], {"dim": "00:00-07:00", "back_s": 120})
+        self.assertEqual(data["settings"], {"dim": "00:00-07:00", "back_s": 120, "player": "page"})
 
     def test_api_without_readers(self):
         panel.AGENDA = panel.SPOTIFY = None
@@ -1104,9 +1104,15 @@ class FridgeTest(unittest.TestCase):
 
     def test_api_settings_from_config(self):
         (panel.CONFIG / "fridge").write_text("dim=01:00-08:30\nback_s=5\n")
-        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"], {"dim": "01:00-08:30", "back_s": 120})
-        (panel.CONFIG / "fridge").write_text("dim=late\nback_s=300\n")
-        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"], {"dim": "00:00-07:00", "back_s": 300})
+        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"],
+                         {"dim": "01:00-08:30", "back_s": 120, "player": "page"})
+        (panel.CONFIG / "fridge").write_text("dim=late\nback_s=300\nplayer=app\n")
+        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"],
+                         {"dim": "00:00-07:00", "back_s": 300, "player": "app"})
+        (panel.CONFIG / "fridge").write_text("player=App\n")
+        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"]["player"], "app")
+        (panel.CONFIG / "fridge").write_text("player=Kitchen speaker\n")
+        self.assertEqual(json.loads(self.fetch("/api/fridge")[1])["settings"]["player"], "Kitchen speaker")
 
     def test_api_survives_a_broken_part(self):
         class Broken:

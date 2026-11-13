@@ -63,7 +63,8 @@ class SpotifyTest(unittest.TestCase):
         opener = FakeOpener([TOKEN], [PLAYER])
         self.assertEqual(self.make(opener).now_playing(), {
             "song": "Canción", "artist": "A, B", "album": "Disco", "cover": "https://i.scdn.co/300",
-            "progress_ms": 61000, "duration_ms": 200000, "device": "Parlante cocina", "device_id": "dev1"})
+            "progress_ms": 61000, "duration_ms": 200000, "device": "Parlante cocina", "device_id": "dev1",
+            "playing": True})
         token_req, player_req = opener.asked
         self.assertEqual(token_req.get_method(), "POST")
         self.assertIn(b"grant_type=refresh_token", token_req.data)
@@ -72,12 +73,18 @@ class SpotifyTest(unittest.TestCase):
         self.assertEqual(player_req.get_header("Authorization"), "Bearer tok")
 
     def test_nothing_playing(self):
-        paused = (200, json.dumps({"is_playing": False, "item": None}).encode())
-        opener = FakeOpener([TOKEN], [(204, b""), paused])
+        stopped = (200, json.dumps({"is_playing": False, "item": None}).encode())
+        opener = FakeOpener([TOKEN], [(204, b""), stopped])
         player = self.make(opener)
         self.assertIsNone(player.now_playing())
         self.time += 6
         self.assertIsNone(player.now_playing())
+
+    def test_paused(self):  # a paused song is still told, marked so: the page shows it as paused on the fridge's device
+        paused = json.loads(PLAYER[1])
+        paused["is_playing"] = False
+        got = self.make(FakeOpener([TOKEN], [(200, json.dumps(paused).encode())])).now_playing()
+        self.assertEqual((got["song"], got["playing"]), ("Canción", False))
 
     def test_expired_token_retries_once(self):
         opener = FakeOpener([TOKEN, TOKEN], [(401, b""), PLAYER])
