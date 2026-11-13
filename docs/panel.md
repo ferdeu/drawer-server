@@ -206,12 +206,18 @@ to trust it:
    port doesn't speak), and it won't download anything from a page past a certificate warning.
 2. Settings → tap the magnifier and search **certificate** → **CA certificate** (on Android 11 it
    hides under *Security* → *Advanced* → *Encryption & credentials* → *Install a certificate*) →
-   *Install anyway* → pick `home-ca.pem`. Android may ask you to set a screen lock first.
+   *Install anyway* → pick `home-ca.pem`. Android may ask you to set a screen lock first. If the
+   picker ignores the file when you tap it, name it `home-ca.crt` instead: once you are picking it
+   from here, that name works. (With the tablet's USB debugging on, `MSYS_NO_PATHCONV=1 adb push
+   local/home-ca.pem /sdcard/Download/home-ca.crt` puts it there; the first part keeps Git Bash on
+   Windows from mangling the tablet path. If `adb devices` lists more than one, add `-s <serial>`.)
 3. Check it's yours: *Encryption & credentials* → *Trusted credentials* → **User** → tap it. Its
    SHA-256 fingerprint must match the *Home certificate SHA-256* line step 8 prints (the file went
    through other places on its way). If not, remove it.
-4. Open `https://<server-ip>:8443/fridge`: no warning. In Chrome's ⋮ menu, *Add to Home screen*
-   gives it an icon that opens full screen.
+4. Open `https://<server-ip>:8443/fridge`: no warning. In Chrome's ⋮ menu, *Install* (or *Add to
+   Home screen* → *Install*) gives it its own icon that opens full screen, with no browser bars.
+   To keep it there, turn on Settings → Security → *App pinning* and pin it from the recent apps
+   screen; with gesture navigation, swipe up and hold to unpin.
 
 The home certificate can only vouch for home addresses (192.168…, 10…, 172.16–31…), never for a
 website, so even someone who stole its key from your computer couldn't pass off a fake bank or

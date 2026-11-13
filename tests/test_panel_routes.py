@@ -130,6 +130,12 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(self.fetch("/apple-touch-icon.png")[0], 200)
         self.assertEqual(self.fetch("/panel.py")[0], 404)
 
+    def test_fridge_installs_fullscreen(self):
+        code, body, headers = self.fetch("/fridge-manifest.json")
+        app = json.loads(body)
+        self.assertEqual((code, app["start_url"], app["scope"], app["display"]), (200, "/fridge", "/fridge", "fullscreen"))
+        self.assertIn(b'<link rel="manifest" href="/fridge-manifest.json">', self.fetch("/fridge")[1])
+
     def test_status_cameras(self):
         cams = json.loads(self.fetch("/api/status")[1])["cameras"]
         self.assertEqual(cams, {"names": ["Entrada", "Lateral", "Fondo"], "home": True})

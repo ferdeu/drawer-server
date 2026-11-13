@@ -60,6 +60,9 @@ FRIDGE_PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
+<link rel="manifest" href="/fridge-manifest.json">
+<link rel="icon" href="/icon-192.png">
+<meta name="theme-color" content="#05070b">
 <style>
   :root { --bg:#05070b; --ink:#dfe8f5; --muted:#6f7d92; --glow:#5ee1ff; --now:#7cf5b0; --edge:#1a2433; --all:#c49bff; }
   * { box-sizing:border-box; }

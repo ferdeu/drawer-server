@@ -1986,11 +1986,14 @@ ICONS = {name: Path(__file__).with_name(name)
          for name in ("icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png")}
 
 
-def manifest():
+def manifest(fridge=False):
     title = CONFIG / "title"
     name = title.read_text().strip() if title.exists() else TEXT.get(LANG, TEXT["en"])["title"]
-    return json.dumps({"name": name, "short_name": name, "start_url": "/", "display": "standalone",
-                       "background_color": "#f6f7f9", "theme_color": "#2563eb",
+    # the fridge one opens from the tablet's home screen with no browser bars, status bar or tabs
+    look = ({"start_url": "/fridge", "scope": "/fridge", "display": "fullscreen",
+             "background_color": "#05070b", "theme_color": "#05070b"} if fridge else
+            {"start_url": "/", "display": "standalone", "background_color": "#f6f7f9", "theme_color": "#2563eb"})
+    return json.dumps({"name": name, "short_name": name, **look,
                        "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
                                  {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
                                  {"src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png",
@@ -2122,8 +2125,8 @@ class Handler(BaseHTTPRequestHandler):
             # the home certificate, for the tablet to trust the https door (public, not a secret). A plain
             # download: Android's Chrome hands x509 files to an installer that refuses CA certificates
             body, kind = (CONFIG / "https-ca.pem").read_bytes(), "application/octet-stream"
-        elif self.path == "/manifest.json":
-            body, kind = manifest(), "application/manifest+json"
+        elif self.path in ("/manifest.json", "/fridge-manifest.json"):
+            body, kind = manifest(fridge=self.path == "/fridge-manifest.json"), "application/manifest+json"
         elif self.path.lstrip("/") in ICONS and ICONS[self.path.lstrip("/")].exists():
             body, kind = ICONS[self.path.lstrip("/")].read_bytes(), "image/png"
         else:
