@@ -147,7 +147,9 @@ at the bottom:
 - **Status**: internet, who's home, ink, the server, storage and the devices on the Wi-Fi, from
   the same data as the panel.
 
-After 2 minutes without a touch it goes back to Home (`FRIDGE_BACK_S`). To be kind to a screen
+After 2 minutes without a touch it goes back to Home (`FRIDGE_BACK_S`). To stay on the cameras or
+any other screen instead, untick *Always back to Home* under the date (each tablet remembers its
+own choice). To be kind to a screen
 that never turns off, the background is black, everything moves a few pixels every few minutes,
 and between midnight and 7 the page dims itself (`FRIDGE_DIM=00:00-07:00`).
 

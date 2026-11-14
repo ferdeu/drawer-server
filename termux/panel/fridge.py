@@ -9,7 +9,7 @@ TEXT = {
         "left_today": "What's left today", "now": "NOW", "until": "until {t}", "until_short": "until {t}",
         "all_day": "all day", "nothing": "Nothing else today", "stale": "no connection to the calendar", "offline": "no connection to the server",
         "more": "+{n} more", "today": "Today", "week": "This week", "playing": "Playing on Spotify", "on_device": "on {d}",
-        "live": "LIVE", "home_only": "Home only",
+        "live": "LIVE", "home_only": "Home only", "back_home": "Always back to Home",
         "k_internet": "Internet", "k_home": "At home", "k_printer": "Printer", "k_server": "Server", "k_disk": "Storage",
         "k_devices": "Devices · {on} of {n} connected", "last_test": "Last test {t}", "alerts": "with alerts",
         "wifi": "Wi-Fi {s}", "cpu": "processor {n}%", "plug_on": "plug on ({lo}–{hi}%)", "plug_off": "plug off ({lo}–{hi}%)",
@@ -32,7 +32,7 @@ TEXT = {
         "left_today": "Lo que queda de hoy", "now": "AHORA", "until": "hasta las {t}", "until_short": "hasta {t}",
         "all_day": "todo el día", "nothing": "Nada más por hoy", "stale": "sin conexión con el calendario", "offline": "sin conexión con el server",
         "more": "+{n} más", "today": "Hoy", "week": "Esta semana", "playing": "Sonando en Spotify", "on_device": "en {d}",
-        "live": "VIVO", "home_only": "Solo en casa",
+        "live": "VIVO", "home_only": "Solo en casa", "back_home": "Volver siempre a Casa",
         "k_internet": "Internet", "k_home": "En casa", "k_printer": "Impresora", "k_server": "Server", "k_disk": "Disco",
         "k_devices": "Dispositivos · {on} de {n} conectados", "last_test": "Último test {t}", "alerts": "con alertas",
         "wifi": "Wi-Fi {s}", "cpu": "procesador {n}%", "plug_on": "enchufe prendido ({lo}–{hi}%)",
@@ -99,6 +99,12 @@ FRIDGE_PAGE = r"""<!doctype html>
   .time { font-weight:200; font-variant-numeric:tabular-nums; letter-spacing:-2px; line-height:1;
           text-shadow:0 0 24px #5ee1ff55; color:#eaf6ff; font-size:160px; }
   .date { color:var(--muted); text-transform:uppercase; letter-spacing:6px; font-size:20px; margin-top:14px; }
+  .stay { display:inline-flex; align-items:center; gap:10px; margin-top:26px; padding:6px 0; color:var(--muted);
+          font-size:15px; letter-spacing:2px; text-transform:uppercase; cursor:pointer; }
+  .stay i { width:20px; height:20px; border-radius:6px; border:1px solid #2a3546; display:grid; place-items:center;
+            font-style:normal; font-size:13px; color:var(--bg); }
+  .stay.on i { background:var(--glow); border-color:var(--glow); box-shadow:0 0 8px var(--glow); }
+  .stay.on i::before { content:"✓"; }
   #casa .right { flex:1; align-self:stretch; border-left:1px solid var(--edge); padding-left:36px; min-width:0;
                  display:flex; flex-direction:column; justify-content:center; }
   #today { min-height:0; overflow:hidden; margin-top:6px; }
@@ -268,6 +274,7 @@ FRIDGE_PAGE = r"""<!doctype html>
   <section class="screen" id="casa">
     <div class="top">
       <div class="left"><div class="time" id="bigclock"></div><div class="date" id="date"></div>
+        <div class="stay" id="stay" role="checkbox"><i></i><span id="stay-label"></span></div>
         <div class="nothing" id="nothing" hidden></div>
         <div class="quiet stale" hidden></div></div>
       <div class="right"><div class="label" id="left-today"></div><div id="today"></div>
@@ -356,13 +363,28 @@ $('#nothing').textContent = T.nothing;
 for (const el of document.querySelectorAll('.stale')) el.textContent = T.stale;
 buildScreens();
 
-// back to the first screen after a while untouched
+// back to the first screen after a while untouched, unless Home's tick is off (kept on this tablet only)
+function backHome() {
+  try { return localStorage.getItem('fridge.back') !== 'no'; } catch (e) { return true; }
+}
+function showBackHome() {
+  const on = backHome();
+  $('#stay').classList.toggle('on', on);
+  $('#stay').setAttribute('aria-checked', on);
+}
+$('#stay-label').textContent = T.back_home;
+$('#stay').onclick = () => {
+  try { localStorage.setItem('fridge.back', backHome() ? 'no' : 'yes'); } catch (e) {}
+  showBackHome();
+};
+showBackHome();
 let touched = Date.now();
 for (const name of ['pointerdown', 'touchstart', 'keydown']) addEventListener(name, () => { touched = Date.now(); }, {passive: true});
 strip.addEventListener('scroll', () => { touched = Date.now(); }, {passive: true});
 setInterval(() => {
   if (Date.now() - touched <= data.settings.back_s * 1000) return;
-  closeSearch();
+  closeSearch();  // even unticked: a forgotten search doesn't cover the screen
+  if (!backHome()) return;
   if (current && current !== screens[0]) go(screens[0]);
 }, 5000);
 

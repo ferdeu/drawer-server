@@ -1080,6 +1080,16 @@ class FridgeTest(unittest.TestCase):
         self.assertIn("'https://sdk.scdn.co/spotify-player.js'", body)
         self.assertIn("'/me/player/recently-played?limit=1'", body)
 
+    def test_going_back_home_can_be_turned_off(self):
+        # a tick under the date on Home; unticked, the tablet stays on the screen it was left on
+        panel.LANG = "es"
+        body = self.fetch("/fridge")[1].decode()
+        self.assertIn('id="stay"', body)
+        self.assertIn("Volver siempre a Casa", body)
+        self.assertIn("closeSearch();  // even unticked: a forgotten search doesn't cover the screen\n"
+                      "  if (!backHome()) return;", body)
+        self.assertIn("'fridge.back'", body)  # remembered on the tablet itself
+
     def test_fits_the_tablet_upright_too(self):
         # on the wall it lies down, in the hand it stands up: every screen has an upright layout
         body = self.fetch("/fridge")[1].decode()
